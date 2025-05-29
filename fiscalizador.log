@@ -1,0 +1,50 @@
+2025-05-29 16:56:21,171 - werkzeug - INFO - [31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:8080
+ * Running on http://192.168.1.6:8080
+2025-05-29 16:56:21,172 - werkzeug - INFO - [33mPress CTRL+C to quit[0m
+2025-05-29 16:56:23,377 - __main__ - INFO - Recibida solicitud de fiscalización: tipo=1, pto_vta=12
+2025-05-29 16:56:23,677 - __main__ - INFO - Último comprobante: 6, siguiente: 7
+2025-05-29 16:56:23,677 - __main__ - INFO - Enviando comprobante a AFIP...
+2025-05-29 16:56:23,833 - __main__ - ERROR - Error al procesar respuesta de AFIP: Start tag expected, '<' not found, line 2, column 1 (<string>, line 2)
+Traceback (most recent call last):
+  File "/home/matias/Documentos/cormons/fiscalizador-api/app.py", line 161, in fiscalizar
+    xml_resp = etree.fromstring(respuesta_afip.encode())
+  File "src/lxml/etree.pyx", line 3307, in lxml.etree.fromstring
+  File "src/lxml/parser.pxi", line 1995, in lxml.etree._parseMemoryDocument
+  File "src/lxml/parser.pxi", line 1882, in lxml.etree._parseDoc
+  File "src/lxml/parser.pxi", line 1164, in lxml.etree._BaseParser._parseDoc
+  File "src/lxml/parser.pxi", line 633, in lxml.etree._ParserContext._handleParseResultDoc
+  File "src/lxml/parser.pxi", line 743, in lxml.etree._handleParseResult
+  File "src/lxml/parser.pxi", line 672, in lxml.etree._raiseParseError
+  File "<string>", line 2
+lxml.etree.XMLSyntaxError: Start tag expected, '<' not found, line 2, column 1
+2025-05-29 16:56:23,835 - werkzeug - INFO - 127.0.0.1 - - [29/May/2025 16:56:23] "[35m[1mPOST /fiscalizar HTTP/1.1[0m" 500 -
+2025-05-29 16:57:14,274 - werkzeug - INFO - [31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:8080
+ * Running on http://192.168.1.6:8080
+2025-05-29 16:57:14,274 - werkzeug - INFO - [33mPress CTRL+C to quit[0m
+2025-05-29 16:57:25,330 - __main__ - INFO - Recibida solicitud de fiscalización: tipo=1, pto_vta=12
+2025-05-29 16:57:25,604 - __main__ - INFO - Último comprobante: 6, siguiente: 7
+2025-05-29 16:57:25,604 - __main__ - INFO - Enviando comprobante a AFIP...
+2025-05-29 16:57:25,604 - afip.wsfe - INFO - Enviando solicitud a AFIP...
+2025-05-29 16:57:25,753 - afip.wsfe - ERROR - Error HTTP 400: 
+
+2025-05-29 16:57:25,754 - __main__ - ERROR - Error interno: Error HTTP 400 al comunicarse con AFIP
+Traceback (most recent call last):
+  File "/home/matias/Documentos/cormons/fiscalizador-api/afip/wsfe.py", line 57, in enviar_comprobante
+    r.raise_for_status()
+  File "/usr/lib/python3/dist-packages/requests/models.py", line 943, in raise_for_status
+    raise HTTPError(http_error_msg, response=self)
+requests.exceptions.HTTPError: 400 Client Error: Bad Request for url: https://wswhomo.afip.gov.ar/wsfev1/service.asmx
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/home/matias/Documentos/cormons/fiscalizador-api/app.py", line 157, in fiscalizar
+    respuesta_afip = enviar_comprobante(token, sign, CUIT, datos_cbte_xml)
+  File "/home/matias/Documentos/cormons/fiscalizador-api/afip/wsfe.py", line 92, in enviar_comprobante
+    raise Exception(f"Error HTTP {e.response.status_code} al comunicarse con AFIP")
+Exception: Error HTTP 400 al comunicarse con AFIP
+2025-05-29 16:57:25,760 - werkzeug - INFO - 127.0.0.1 - - [29/May/2025 16:57:25] "[35m[1mPOST /fiscalizar HTTP/1.1[0m" 500 -
