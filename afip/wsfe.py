@@ -1,101 +1,115 @@
-import requests
+import requests  # Importa la librería requests para realizar solicitudes HTTP.
 
-def construir_soap(token, sign, cuit, datos_cbte_xml):
+def construir_soap(token, sign, cuit, datos_cbte_xml):  # Función para construir el mensaje SOAP que se enviará a AFIP.
+    # Se retorna una cadena XML con el formato SOAP estándar.
+    # Se insertan dinámicamente el token, sign y CUIT en la cabecera de autenticación.
+    # En el cuerpo se inserta el XML del comprobante previamente generado.
     return f"""<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"
                       xmlns:ar="http://ar.gov.afip.dif.FEV1/">
    <soapenv:Header/>
    <soapenv:Body>
       <ar:FECAESolicitar>
          <ar:Auth>
-            <ar:Token>{token}</ar:Token>
-            <ar:Sign>{sign}</ar:Sign>
-            <ar:Cuit>{cuit}</ar:Cuit>
+            <ar:Token>{token}</ar:Token>  <!-- Token devuelto por AFIP para autenticación. -->
+            <ar:Sign>{sign}</ar:Sign>  <!-- Firma digital devuelta por AFIP. -->
+            <ar:Cuit>{cuit}</ar:Cuit>  <!-- CUIT de la empresa emisora. -->
          </ar:Auth>
-         {datos_cbte_xml}
+         <ar:FeCAEReq>
+            {datos_cbte_xml}  <!-- XML del comprobante a autorizar. -->
+         </ar:FeCAEReq>
       </ar:FECAESolicitar>
    </soapenv:Body>
 </soapenv:Envelope>"""
 
-def enviar_comprobante(token, sign, cuit, datos_cbte_xml):
-    body = construir_soap(token, sign, cuit, datos_cbte_xml)
-    headers = {
-        'SOAPAction': 'http://ar.gov.afip.dif.FEV1/FECAESolicitar',
-        'Content-Type': 'text/xml; charset=utf-8',
+def enviar_comprobante(token, sign, cuit, datos_cbte_xml):  # Función para enviar el comprobante a AFIP y recibir la respuesta.
+    body = construir_soap(token, sign, cuit, datos_cbte_xml)  # Se construye el cuerpo del mensaje SOAP.
+    headers = {  # Se definen los encabezados HTTP necesarios para la solicitud SOAP.
+        'SOAPAction': 'http://ar.gov.afip.dif.FEV1/FECAESolicitar',  # Acción SOAP.
+        'Content-Type': 'text/xml; charset=utf-8',  # Tipo de contenido.
     }
+    # Guardar en archivo (opcional)
+    with open("xml_enviado.xml", "w", encoding="utf-8") as f:  # Se guarda el XML enviado para referencia o auditoría.
+        f.write(body)
+    # Se realiza la solicitud POST a la URL del servicio web de AFIP (entorno de homologación).
     r = requests.post("https://wswhomo.afip.gov.ar/wsfev1/service.asmx", headers=headers, data=body)
-    return r.text
+    return r.text  # Se devuelve la respuesta como texto plano.
 
-def construir_xml_comprobante(datos):
-    """Construye el XML del comprobante según la estructura requerida por AFIP."""
-    # Validar campos requeridos
-    campos_requeridos = ['tipo_comprobante', 'punto_venta', 'doc_tipo', 'doc_nro', 
-                        'cbte_fch', 'imp_neto', 'imp_iva', 'imp_total', 'mon_id', 
-                        'concepto', 'condicion_iva_receptor']
+def construir_xml_comprobante(datos):  # Función para construir el XML del comprobante a partir de los datos recibidos.
+
+    # Ajustes especiales para comprobante tipo C (CbteTipo=11)
+    if datos['tipo_comprobante'] == 11:
+        # Según AFIP, para tipo C estos importes deben ser 0:
+        datos['imp_tot_conc'] = '0.00'
+        datos['imp_op_ex'] = '0.00'
+        datos['imp_iva'] = '0.00'
+        datos['alicuotas'] = []  # Para no enviar el bloque <ar:Iva>
     
-    for campo in campos_requeridos:
-        if campo not in datos:
-            raise ValueError(f"Falta el campo requerido: {campo}")
+    # Calcular ImpTotal como ImpNeto + ImpTrib
+    imp_neto = float(datos['imp_neto'])
+    imp_trib = float(datos.get('imp_trib', 0.00))
+    datos['imp_total'] = f"{round(imp_neto + imp_trib, 2):.2f}"  # AFIP exige 2 decimales.
 
-    # Validar tipo de documento
-    doc_tipo = int(datos['doc_tipo'])
-    doc_nro = str(datos['doc_nro'])
-    
-    if doc_tipo == 80 and len(doc_nro) != 11:  # CUIT
-        raise ValueError("El CUIT debe tener 11 dígitos")
-    elif doc_tipo == 96 and len(doc_nro) != 8:  # DNI
-        raise ValueError("El DNI debe tener 8 dígitos")
-    elif doc_tipo == 99 and doc_nro != "0":  # Consumidor Final
-        raise ValueError("Para Consumidor Final, el número de documento debe ser 0")
+    # Construcción de Tributos
+    tributos_xml = ""  # Inicializa la variable que contendrá los tributos.
+    if datos.get('tributos'):
+        tributos_items = ""
+        for t in datos['tributos']:
+            tributos_items += f"""
+            <ar:Tributo>
+                <ar:Id>{t['Id']}</ar:Id>
+                <ar:Desc>{t['Desc']}</ar:Desc>
+                <ar:BaseImp>{t['BaseImp']}</ar:BaseImp>
+                <ar:Alic>{t['Alic']}</ar:Alic>
+                <ar:Importe>{t['Importe']}</ar:Importe>
+            </ar:Tributo>"""
+        tributos_xml = f"<ar:Tributos>{tributos_items}\n</ar:Tributos>"
 
-    # Construir XML
-    xml = f"""<?xml version="1.0" encoding="UTF-8" ?>
-<FeDetReq>
-    <Concepto>{datos['concepto']}</Concepto>
-    <DocTipo>{doc_tipo}</DocTipo>
-    <DocNro>{doc_nro}</DocNro>
-    <CbteDesde>{datos['cbte_desde']}</CbteDesde>
-    <CbteHasta>{datos['cbte_hasta']}</CbteHasta>
-    <CbteFch>{datos['cbte_fch']}</CbteFch>
-    <ImpTotal>{datos['imp_total']}</ImpTotal>
-    <ImpNeto>{datos['imp_neto']}</ImpNeto>
-    <ImpOpEx>{datos.get('imp_op_ex', '0.00')}</ImpOpEx>
-    <ImpTrib>{datos.get('imp_trib', '0.00')}</ImpTrib>
-    <ImpIVA>{datos['imp_iva']}</ImpIVA>
-    <FchServicio>{datos.get('fch_serv_desde', '')}</FchServicio>
-    <FchVtoPago>{datos.get('fch_serv_hasta', '')}</FchVtoPago>
-    <MonId>{datos['mon_id']}</MonId>
-    <MonCotiz>{datos.get('mon_cotiz', '1.000')}</MonCotiz>
-    <CbtesAsoc>
-        <CbteAsoc>
-            <Tipo>{datos.get('tipo_comprobante')}</Tipo>
-            <PtoVta>{datos.get('punto_venta')}</PtoVta>
-            <Nro>{datos.get('cbte_desde')}</Nro>
-        </CbteAsoc>
-    </CbtesAsoc>
-    <Tributos>
-        {''.join(f'''
-        <Tributo>
-            <Id>{tributo['Id']}</Id>
-            <Desc>{tributo['Desc']}</Desc>
-            <BaseImp>{tributo['BaseImp']}</BaseImp>
-            <Alic>{tributo['Alic']}</Alic>
-            <Importe>{tributo['Importe']}</Importe>
-        </Tributo>''' for tributo in datos.get('tributos', []))}
-    </Tributos>
-    <Iva>
-        {''.join(f'''
-        <AlicIva>
-            <Id>{alicuota['Id']}</Id>
-            <BaseImp>{alicuota['BaseImp']}</BaseImp>
-            <Importe>{alicuota['Importe']}</Importe>
-        </AlicIva>''' for alicuota in datos.get('alicuotas', []))}
-    </Iva>
-    <Opcionales>
-        <Opcional>
-            <Id>1</Id>
-            <Valor>{datos.get('condicion_iva_receptor')}</Valor>
-        </Opcional>
-    </Opcionales>
-</FeDetReq>"""
+    # Construcción de Iva
+    iva_xml = ""  # Inicializa la variable para el IVA.
+    if datos.get('alicuotas') and datos['tipo_comprobante'] != 11:
+        iva_items = ""
+        for a in datos['alicuotas']:
+            iva_items += f"""
+            <ar:AlicIva>
+                <ar:Id>{a['Id']}</ar:Id>
+                <ar:BaseImp>{a['BaseImp']}</ar:BaseImp>
+                <ar:Importe>{a['Importe']}</ar:Importe>
+            </ar:AlicIva>"""
+        iva_xml = f"<ar:Iva>{iva_items}\n</ar:Iva>"
 
-    return xml
+    # Construcción de la cabecera del comprobante
+    cabecera = f"""
+    <ar:FeCabReq>
+        <ar:CantReg>1</ar:CantReg>
+        <ar:PtoVta>{datos['punto_venta']}</ar:PtoVta>
+        <ar:CbteTipo>{datos['tipo_comprobante']}</ar:CbteTipo>
+    </ar:FeCabReq>"""
+
+    # Construcción del detalle del comprobante
+    detalle = f"""
+    <ar:FeDetReq>
+        <ar:FECAEDetRequest>
+            <ar:Concepto>{datos['concepto']}</ar:Concepto>
+            <ar:DocTipo>{datos['doc_tipo']}</ar:DocTipo>
+            <ar:DocNro>{datos['doc_nro']}</ar:DocNro>
+            <ar:CbteDesde>{datos['cbte_desde']}</ar:CbteDesde>
+            <ar:CbteHasta>{datos['cbte_hasta']}</ar:CbteHasta>
+            <ar:CbteFch>{datos['cbte_fch']}</ar:CbteFch>
+            <ar:ImpTotal>{datos['imp_total']}</ar:ImpTotal>
+            <ar:ImpTotConc>{datos.get('imp_tot_conc', '0.00')}</ar:ImpTotConc>
+            <ar:ImpNeto>{datos['imp_neto']}</ar:ImpNeto>
+            <ar:ImpOpEx>{datos.get('imp_op_ex', '0.00')}</ar:ImpOpEx>
+            <ar:ImpTrib>{datos.get('imp_trib', '0.00')}</ar:ImpTrib>
+            <ar:ImpIVA>{datos.get('imp_iva', '0.00')}</ar:ImpIVA>
+            <ar:FchServDesde>{datos.get('fch_serv_desde', '')}</ar:FchServDesde>
+            <ar:FchServHasta>{datos.get('fch_serv_hasta', '')}</ar:FchServHasta>
+            <ar:FchVtoPago>{datos.get('fch_vto_pago', '')}</ar:FchVtoPago>
+            <ar:MonId>{datos['mon_id']}</ar:MonId>
+            <ar:MonCotiz>{datos.get('mon_cotiz', '1.000')}</ar:MonCotiz>
+            <ar:CondicionIVAReceptorId>{datos.get('condicion_iva_receptor', '')}</ar:CondicionIVAReceptorId>
+            {tributos_xml}
+            {iva_xml}
+        </ar:FECAEDetRequest>
+    </ar:FeDetReq>"""
+
+    return f"{cabecera}{detalle}"  # Se concatenan y devuelven la cabecera y el detalle del comprobante.

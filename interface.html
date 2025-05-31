@@ -377,7 +377,16 @@
                     body: JSON.stringify(datos)
                 });
                 
-                const resultado = await response.json();
+                let resultado;
+                const contentType = response.headers.get("content-type") || "";
+
+                if (contentType.includes("application/json")) {
+                    resultado = await response.json();
+                } else {
+                    const textoPlano = await response.text();
+                    throw new Error("Respuesta inesperada del servidor:\n" + textoPlano);
+                }
+
                 
                 const resultadoCard = document.getElementById('resultadoCard');
                 const resultadoPre = document.getElementById('resultado');
