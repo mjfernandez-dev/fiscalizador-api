@@ -62,21 +62,75 @@ def construir_soap(token, sign, cuit, datos_cbte_xml):  # Función para construi
    </soapenv:Body>
 </soapenv:Envelope>"""
 
-def enviar_comprobante(token, sign, cuit, datos_cbte_xml):  # Función para enviar el comprobante a AFIP y recibir la respuesta.
-    body = construir_soap(token, sign, cuit, datos_cbte_xml)  # Se construye el cuerpo del mensaje SOAP.
-    headers = {  # Se definen los encabezados HTTP necesarios para la solicitud SOAP.
-        'SOAPAction': 'http://ar.gov.afip.dif.FEV1/FECAESolicitar',  # Acción SOAP.
-        'Content-Type': 'text/xml; charset=utf-8',  # Tipo de contenido.
-    }
-    # Guardar en archivo (opcional)
-    with open("xml_enviado.xml", "w", encoding="utf-8") as f:  # Se guarda el XML enviado para referencia o auditoría.
-        f.write(body)
-    # Se realiza la solicitud POST a la URL del servicio web de AFIP (entorno de homologación).
-    r = requests.post("https://wswhomo.afip.gov.ar/wsfev1/service.asmx", headers=headers, data=body)
-    return r.text  # Se devuelve la respuesta como texto plano.
+def enviar_comprobante(token, sign, cuit, datos_cbte_xml):
+    """Envía el comprobante a AFIP usando el servicio SOAP."""
+    try:
+        # Crear cliente SOAP
+        client = Client(
+            'https://wswhomo.afip.gov.ar/wsfev1/service.asmx?WSDL',
+            wsse=UsernameToken(token, sign)
+        )
+
+        # Definir namespaces
+        namespaces = {
+            'ar': 'http://ar.gov.afip.dif.FEV1/',
+            'soapenv': 'http://schemas.xmlsoap.org/soap/envelope/'
+        }
+
+        # Registrar los namespaces
+        for prefix, uri in namespaces.items():
+            ET.register_namespace(prefix, uri)
+
+        # Parsear el XML con los namespaces registrados
+        root = ET.fromstring(datos_cbte_xml)
+        
+        # Preparar parámetros
+        params = {
+            'Auth': {
+                'Token': token,
+                'Sign': sign,
+                'Cuit': cuit
+            },
+            'FeCAEReq': root
+        }
+
+        # Llamar al servicio
+        response = client.service.FECAESolicitar(**params)
+        
+        # Convertir la respuesta a XML
+        xml_response = ET.tostring(response, encoding='unicode', pretty_print=True)
+        
+        # Guardar en archivo para debugging
+        with open("xml_respuesta.xml", "w", encoding="utf-8") as f:
+            f.write(xml_response)
+            
+        return xml_response
+
+    except Exception as e:
+        # Si hay un error en la respuesta SOAP, intentar extraer el mensaje de error
+        try:
+            if hasattr(e, 'detail'):
+                error_xml = ET.fromstring(str(e.detail))
+                codigo = error_xml.find('.//Code')
+                mensaje = error_xml.find('.//Msg')
+                if codigo is not None and mensaje is not None:
+                    raise ValueError(f"Error AFIP {codigo.text}: {mensaje.text}")
+        except:
+            pass
+        raise ValueError(f"Error al enviar comprobante: {str(e)}")
 
 def construir_xml_comprobante(datos):
     print("Construyendo XML con datos:", datos)  # Log de datos de entrada
+
+    # Definir namespaces
+    namespaces = {
+        'ar': 'http://ar.gov.afip.dif.FEV1/',
+        'soapenv': 'http://schemas.xmlsoap.org/soap/envelope/'
+    }
+
+    # Registrar los namespaces
+    for prefix, uri in namespaces.items():
+        ET.register_namespace(prefix, uri)
 
     # Validar CUIT del receptor si es tipo 80 (CUIT)
     if datos.get('doc_tipo') == 80 and datos.get('doc_nro'):
@@ -221,40 +275,39 @@ def construir_xml_comprobante(datos):
         print("XML de IVA generado:", iva_xml)
 
     # Construcción de la cabecera del comprobante
-    cabecera = f"""
-    <ar:FeCabReq>
-        <ar:CantReg>1</ar:CantReg>
-        <ar:PtoVta>{int(datos['punto_venta'])}</ar:PtoVta>
-        <ar:CbteTipo>{int(datos['tipo_comprobante'])}</ar:CbteTipo>
-    </ar:FeCabReq>"""
+    cabecera = f"""<?xml version="1.0" encoding="UTF-8"?>
+<ar:FeCabReq xmlns:ar="{namespaces['ar']}">
+    <ar:CantReg>1</ar:CantReg>
+    <ar:PtoVta>{int(datos['punto_venta'])}</ar:PtoVta>
+    <ar:CbteTipo>{int(datos['tipo_comprobante'])}</ar:CbteTipo>
+</ar:FeCabReq>"""
     print("Cabecera generada:", cabecera)
 
     # Construcción del detalle del comprobante
-    detalle = f"""
-    <ar:FeDetReq>
-        <ar:FECAEDetRequest>
-            <ar:Concepto>{int(datos['concepto'])}</ar:Concepto>
-            <ar:DocTipo>{int(datos['doc_tipo'])}</ar:DocTipo>
-            <ar:DocNro>{int(datos['doc_nro'])}</ar:DocNro>
-            <ar:CbteDesde>{int(datos['cbte_desde'])}</ar:CbteDesde>
-            <ar:CbteHasta>{int(datos['cbte_hasta'])}</ar:CbteHasta>
-            <ar:CbteFch>{datos['cbte_fch']}</ar:CbteFch>
-            <ar:ImpTotal>{datos['imp_total']}</ar:ImpTotal>
-            <ar:ImpTotConc>{datos.get('imp_tot_conc', '0.00')}</ar:ImpTotConc>
-            <ar:ImpNeto>{datos['imp_neto']}</ar:ImpNeto>
-            <ar:ImpOpEx>{datos.get('imp_op_ex', '0.00')}</ar:ImpOpEx>
-            <ar:ImpTrib>{datos.get('imp_trib', '0.00')}</ar:ImpTrib>
-            <ar:ImpIVA>{datos['imp_iva']}</ar:ImpIVA>
-            <ar:FchServDesde>{datos.get('fch_serv_desde', '')}</ar:FchServDesde>
-            <ar:FchServHasta>{datos.get('fch_serv_hasta', '')}</ar:FchServHasta>
-            <ar:FchVtoPago>{datos.get('fch_vto_pago', '')}</ar:FchVtoPago>
-            <ar:MonId>{datos['mon_id']}</ar:MonId>
-            <ar:MonCotiz>{datos.get('mon_cotiz', '1.000')}</ar:MonCotiz>
-            <ar:CondicionIVAReceptorId>{int(datos.get('condicion_iva_receptor', '5'))}</ar:CondicionIVAReceptorId>
-            {tributos_xml}
-            {iva_xml}
-        </ar:FECAEDetRequest>
-    </ar:FeDetReq>"""
+    detalle = f"""<ar:FeDetReq xmlns:ar="{namespaces['ar']}">
+    <ar:FECAEDetRequest>
+        <ar:Concepto>{int(datos['concepto'])}</ar:Concepto>
+        <ar:DocTipo>{int(datos['doc_tipo'])}</ar:DocTipo>
+        <ar:DocNro>{int(datos['doc_nro'])}</ar:DocNro>
+        <ar:CbteDesde>{int(datos['cbte_desde'])}</ar:CbteDesde>
+        <ar:CbteHasta>{int(datos['cbte_hasta'])}</ar:CbteHasta>
+        <ar:CbteFch>{datos['cbte_fch']}</ar:CbteFch>
+        <ar:ImpTotal>{datos['imp_total']}</ar:ImpTotal>
+        <ar:ImpTotConc>{datos.get('imp_tot_conc', '0.00')}</ar:ImpTotConc>
+        <ar:ImpNeto>{datos['imp_neto']}</ar:ImpNeto>
+        <ar:ImpOpEx>{datos.get('imp_op_ex', '0.00')}</ar:ImpOpEx>
+        <ar:ImpTrib>{datos.get('imp_trib', '0.00')}</ar:ImpTrib>
+        <ar:ImpIVA>{datos['imp_iva']}</ar:ImpIVA>
+        <ar:FchServDesde>{datos.get('fch_serv_desde', '')}</ar:FchServDesde>
+        <ar:FchServHasta>{datos.get('fch_serv_hasta', '')}</ar:FchServHasta>
+        <ar:FchVtoPago>{datos.get('fch_vto_pago', '')}</ar:FchVtoPago>
+        <ar:MonId>{datos['mon_id']}</ar:MonId>
+        <ar:MonCotiz>{datos.get('mon_cotiz', '1.000')}</ar:MonCotiz>
+        <ar:CondicionIVAReceptorId>{int(datos.get('condicion_iva_receptor', '5'))}</ar:CondicionIVAReceptorId>
+        {tributos_xml}
+        {iva_xml}
+    </ar:FECAEDetRequest>
+</ar:FeDetReq>"""
     print("Detalle generado:", detalle)
 
     xml_final = f"{cabecera}{detalle}"

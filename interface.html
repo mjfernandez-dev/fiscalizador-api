@@ -3,6 +3,10 @@
 <head>
     <title>Fiscalizador AFIP</title>
     <meta charset="UTF-8">
+        <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
+    <link rel="icon" type="image/x-icon" href="/favicon.ico?v=2">
     <style>
         body {
             font-family: Arial, sans-serif;
@@ -98,6 +102,26 @@
         </select>
     </div>
 
+    <div class="form-group">
+        <label for="condicionIva">Condición IVA del Receptor:</label>
+        <select id="condicionIva">
+            <option value="1">IVA Responsable Inscripto</option>
+            <option value="2">IVA Responsable no Inscripto</option>
+            <option value="3">IVA no Responsable</option>
+            <option value="4">IVA Sujeto Exento</option>
+            <option value="5" selected>Consumidor Final</option>
+            <option value="6">Responsable Monotributo</option>
+            <option value="7">Sujeto no Categorizado</option>
+            <option value="8">Proveedor del Exterior</option>
+            <option value="9">Cliente del Exterior</option>
+            <option value="10">IVA Liberado - Ley Nº 19.640</option>
+            <option value="11">IVA Responsable Inscripto - Agente de Percepción</option>
+            <option value="12">Pequeño Contribuyente Eventual</option>
+            <option value="13">Monotributista Social</option>
+            <option value="14">Pequeño Contribuyente Eventual Social</option>
+        </select>
+    </div>
+
     <button onclick="fiscalizar()">Fiscalizar</button>
     <button onclick="consultarUltimo()">Consultar Último Comprobante</button>
     <button onclick="consultarEstadoTA()">Consultar Estado TA</button>
@@ -161,11 +185,23 @@
                     '9': 0.025
                 }[alicuotaId];
 
+                // Obtener fecha actual en formato YYYYMMDD
+                const now = new Date();
+                const cbte_fch = now.getFullYear().toString() +
+                    (now.getMonth() + 1).toString().padStart(2, '0') +
+                    now.getDate().toString().padStart(2, '0');
+
+                // Construir objeto de datos
                 const data = {
                     tipo_comprobante: parseInt(document.getElementById('tipoComprobante').value),
+                    punto_venta: 12,  // Valor por defecto
                     doc_tipo: parseInt(document.getElementById('docTipo').value),
                     doc_nro: document.getElementById('docNro').value,
+                    cbte_fch: cbte_fch,
                     imp_neto: impNeto.toFixed(2),
+                    mon_id: "PES",  // Valor por defecto
+                    concepto: 1,    // Valor por defecto
+                    condicion_iva_receptor: parseInt(document.getElementById('condicionIva').value),
                     alicuotas: [{
                         Id: alicuotaId,
                         BaseImp: impNeto.toFixed(2),
@@ -173,13 +209,21 @@
                     }]
                 };
 
-                const resultado = await fetchWithApiKey('/fiscalizar', {
+                // Log para depuración
+                console.log('Datos a enviar:', JSON.stringify(data, null, 2));
+
+                const resultado = await fetchWithApiKey('/afip/fiscalizar', {
                     method: 'POST',
                     body: JSON.stringify(data)
                 });
+
+                // Log para depuración
+                console.log('Respuesta del servidor:', resultado);
+
                 mostrarResultado(resultado);
             } catch (error) {
-                console.error('Error:', error);
+                console.error('Error completo:', error);
+                mostrarResultado({ error: error.message }, true);
             }
         }
 
@@ -187,7 +231,7 @@
         async function consultarUltimo() {
             try {
                 const tipoComprobante = document.getElementById('tipoComprobante').value;
-                const resultado = await fetchWithApiKey(`/ultimo-comprobante?cbte_tipo=${tipoComprobante}`);
+                const resultado = await fetchWithApiKey(`/afip/ultimo-comprobante?cbte_tipo=${tipoComprobante}`);
                 mostrarResultado(resultado);
             } catch (error) {
                 console.error('Error:', error);
@@ -197,7 +241,7 @@
         // Función para consultar estado del TA
         async function consultarEstadoTA() {
             try {
-                const resultado = await fetchWithApiKey('/estado-ta');
+                const resultado = await fetchWithApiKey('/afip/estado-ta');
                 mostrarResultado(resultado);
             } catch (error) {
                 console.error('Error:', error);
@@ -207,7 +251,7 @@
         // Función para regenerar TA
         async function regenerarTA() {
             try {
-                const resultado = await fetchWithApiKey('/regenerar-ta', {
+                const resultado = await fetchWithApiKey('/afip/regenerar-ta', {
                     method: 'POST'
                 });
                 mostrarResultado(resultado);
