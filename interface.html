@@ -1,435 +1,220 @@
 <!DOCTYPE html>
-<html lang="es">
+<html>
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Fiscalizador AFIP</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <meta charset="UTF-8">
     <style>
-        .container { max-width: 1000px; }
-        .form-label { font-weight: 500; }
-        .required::after { content: " *"; color: red; }
-        .alicuota-item { border: 1px solid #dee2e6; padding: 10px; margin-bottom: 10px; border-radius: 4px; }
-        .tributo-item { border: 1px solid #dee2e6; padding: 10px; margin-bottom: 10px; border-radius: 4px; }
-        .remove-btn { color: #dc3545; cursor: pointer; }
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+        }
+        input, select {
+            width: 100%;
+            padding: 8px;
+            margin-bottom: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        button {
+            background-color: #4CAF50;
+            color: white;
+            padding: 10px 15px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        #resultado {
+            margin-top: 20px;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            white-space: pre-wrap;
+        }
+        .error {
+            color: red;
+        }
+        .success {
+            color: green;
+        }
     </style>
 </head>
-<body class="bg-light">
-    <div class="container py-5">
-        <h1 class="mb-4">Fiscalizador AFIP</h1>
-        
-        <!-- Formulario de comprobante -->
-        <div class="card shadow-sm">
-            <div class="card-body">
-                <h5 class="card-title mb-4">Nuevo Comprobante</h5>
-                
-                <form id="comprobanteForm">
-                    <!-- Datos del comprobante -->
-                    <div class="row mb-3">
-                        <div class="col-md-6">
-                            <label class="form-label required">Tipo de Comprobante</label>
-                            <select class="form-select" name="tipo_comprobante" required>
-                                <option value="1">Factura A</option>
-                                <option value="6">Factura B</option>
-                                <option value="11">Factura C</option>
-                            </select>
-                        </div>
-                        <div class="col-md-6">
-                            <label class="form-label required">Punto de Venta</label>
-                            <input type="number" class="form-control" name="punto_venta" value="12" required>
-                        </div>
-                    </div>
-
-                    <!-- Datos del cliente -->
-                    <div class="row mb-3">
-                        <div class="col-md-4">
-                            <label class="form-label required">Tipo de Documento</label>
-                            <select class="form-select" name="doc_tipo" required>
-                                <option value="80">CUIT</option>
-                                <option value="96">DNI</option>
-                                <option value="99">Consumidor Final</option>
-                            </select>
-                        </div>
-                        <div class="col-md-8">
-                            <label class="form-label required">Número de Documento</label>
-                            <input type="text" class="form-control" name="doc_nro" required>
-                            <div class="form-text">Para Consumidor Final usar 0</div>
-                        </div>
-                    </div>
-
-                    <!-- Fechas -->
-                    <div class="row mb-3">
-                        <div class="col-md-4">
-                            <label class="form-label required">Fecha de Comprobante</label>
-                            <input type="date" class="form-control" name="cbte_fch" required>
-                        </div>
-                        <div class="col-md-4">
-                            <label class="form-label">Fecha Servicio Desde</label>
-                            <input type="date" class="form-control" name="fch_serv_desde">
-                        </div>
-                        <div class="col-md-4">
-                            <label class="form-label">Fecha Servicio Hasta</label>
-                            <input type="date" class="form-control" name="fch_serv_hasta">
-                        </div>
-                    </div>
-
-                    <!-- Importes Base -->
-                    <div class="row mb-3">
-                        <div class="col-md-3">
-                            <label class="form-label required">Neto</label>
-                            <input type="number" class="form-control" name="imp_neto" step="0.01" required>
-                        </div>
-                        <div class="col-md-3">
-                            <label class="form-label">Total Conc.</label>
-                            <input type="number" class="form-control" name="imp_tot_conc" value="0" step="0.01">
-                        </div>
-                        <div class="col-md-3">
-                            <label class="form-label">Oper. Exentas</label>
-                            <input type="number" class="form-control" name="imp_op_ex" value="0" step="0.01">
-                        </div>
-                        <div class="col-md-3">
-                            <label class="form-label">Tributos</label>
-                            <input type="number" class="form-control" name="imp_trib" value="0" step="0.01">
-                        </div>
-                    </div>
-
-                    <!-- IVA -->
-                    <div class="mb-3">
-                        <label class="form-label">Alícuotas de IVA</label>
-                        <div id="alicuotasContainer">
-                            <div class="alicuota-item">
-                                <div class="row">
-                                    <div class="col-md-3">
-                                        <label class="form-label">Tipo</label>
-                                        <select class="form-select" name="iva_tipo[]">
-                                            <option value="5">21%</option>
-                                            <option value="4">10.5%</option>
-                                            <option value="3">27%</option>
-                                            <option value="2">5%</option>
-                                            <option value="1">2.5%</option>
-                                            <option value="6">0%</option>
-                                        </select>
-                                    </div>
-                                    <div class="col-md-3">
-                                        <label class="form-label">Base Imponible</label>
-                                        <input type="number" class="form-control" name="iva_base[]" step="0.01">
-                                    </div>
-                                    <div class="col-md-3">
-                                        <label class="form-label">Importe</label>
-                                        <input type="number" class="form-control" name="iva_importe[]" step="0.01">
-                                    </div>
-                                    <div class="col-md-3">
-                                        <label class="form-label">&nbsp;</label>
-                                        <button type="button" class="btn btn-outline-danger d-block w-100 remove-alicuota">Eliminar</button>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                        <button type="button" class="btn btn-outline-primary mt-2" id="addAlicuota">Agregar Alícuota</button>
-                    </div>
-
-                    <!-- Tributos -->
-                    <div class="mb-3">
-                        <label class="form-label">Tributos</label>
-                        <div id="tributosContainer">
-                            <div class="tributo-item">
-                                <div class="row">
-                                    <div class="col-md-2">
-                                        <label class="form-label">ID</label>
-                                        <input type="number" class="form-control" name="tributo_id[]" value="99">
-                                    </div>
-                                    <div class="col-md-3">
-                                        <label class="form-label">Descripción</label>
-                                        <input type="text" class="form-control" name="tributo_desc[]" value="Impuesto Municipal">
-                                    </div>
-                                    <div class="col-md-2">
-                                        <label class="form-label">Base</label>
-                                        <input type="number" class="form-control" name="tributo_base[]" step="0.01">
-                                    </div>
-                                    <div class="col-md-2">
-                                        <label class="form-label">Alicuota</label>
-                                        <input type="number" class="form-control" name="tributo_alic[]" step="0.01">
-                                    </div>
-                                    <div class="col-md-2">
-                                        <label class="form-label">Importe</label>
-                                        <input type="number" class="form-control" name="tributo_importe[]" step="0.01">
-                                    </div>
-                                    <div class="col-md-1">
-                                        <label class="form-label">&nbsp;</label>
-                                        <button type="button" class="btn btn-outline-danger d-block w-100 remove-tributo">×</button>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                        <button type="button" class="btn btn-outline-primary mt-2" id="addTributo">Agregar Tributo</button>
-                    </div>
-
-                    <!-- Totales y Moneda -->
-                    <div class="row mb-3">
-                        <div class="col-md-4">
-                            <label class="form-label required">Total IVA</label>
-                            <input type="number" class="form-control" name="imp_iva" step="0.01" required readonly>
-                        </div>
-                        <div class="col-md-4">
-                            <label class="form-label required">Total</label>
-                            <input type="number" class="form-control" name="imp_total" step="0.01" required readonly>
-                        </div>
-                        <div class="col-md-4">
-                            <label class="form-label required">Moneda</label>
-                            <select class="form-select" name="mon_id" required>
-                                <option value="PES">PES - Peso Argentino</option>
-                                <option value="USD">USD - Dólar Estadounidense</option>
-                                <option value="EUR">EUR - Euro</option>
-                            </select>
-                        </div>
-                    </div>
-
-                    <!-- Concepto y Condición IVA -->
-                    <div class="row mb-3">
-                        <div class="col-md-6">
-                            <label class="form-label required">Concepto</label>
-                            <select class="form-select" name="concepto" required>
-                                <option value="1">Productos</option>
-                                <option value="2">Servicios</option>
-                                <option value="3">Productos y Servicios</option>
-                            </select>
-                        </div>
-                        <div class="col-md-6">
-                            <label class="form-label required">Condición IVA Receptor</label>
-                            <select class="form-select" name="condicion_iva_receptor" required>
-                                <option value="1">IVA Responsable Inscripto</option>
-                                <option value="2">IVA Responsable no Inscripto</option>
-                                <option value="3">IVA no Responsable</option>
-                                <option value="4">IVA Sujeto Exento</option>
-                                <option value="5">Consumidor Final</option>
-                                <option value="6">Responsable Monotributo</option>
-                                <option value="7">Sujeto no Categorizado</option>
-                                <option value="8">Proveedor del Exterior</option>
-                                <option value="9">Cliente del Exterior</option>
-                                <option value="10">IVA Liberado</option>
-                                <option value="11">IVA Responsable Inscripto - Agente de Percepción</option>
-                                <option value="12">Pequeño Contribuyente Eventual</option>
-                                <option value="13">Monotributista Social</option>
-                                <option value="14">Pequeño Contribuyente Eventual Social</option>
-                            </select>
-                        </div>
-                    </div>
-
-                    <div class="d-grid gap-2">
-                        <button type="submit" class="btn btn-primary">Fiscalizar Comprobante</button>
-                    </div>
-                </form>
-            </div>
-        </div>
-
-        <!-- Resultado -->
-        <div class="card mt-4 shadow-sm d-none" id="resultadoCard">
-            <div class="card-body">
-                <h5 class="card-title">Resultado</h5>
-                <pre id="resultado" class="bg-light p-3 rounded"></pre>
-            </div>
-        </div>
+<body>
+    <h1>Fiscalizador AFIP</h1>
+    
+    <div class="form-group">
+        <label for="apiKey">API Key:</label>
+        <input type="password" id="apiKey" placeholder="Ingrese su API Key">
     </div>
 
+    <div class="form-group">
+        <label for="tipoComprobante">Tipo de Comprobante:</label>
+        <select id="tipoComprobante">
+            <option value="1">Factura A</option>
+            <option value="6">Factura B</option>
+            <option value="11">Factura C</option>
+        </select>
+    </div>
+
+    <div class="form-group">
+        <label for="docTipo">Tipo de Documento:</label>
+        <select id="docTipo">
+            <option value="80">CUIT</option>
+            <option value="96">DNI</option>
+            <option value="99">Consumidor Final</option>
+        </select>
+    </div>
+
+    <div class="form-group">
+        <label for="docNro">Número de Documento:</label>
+        <input type="text" id="docNro" placeholder="Ingrese el número de documento">
+    </div>
+
+    <div class="form-group">
+        <label for="impNeto">Importe Neto:</label>
+        <input type="number" id="impNeto" step="0.01" placeholder="0.00">
+    </div>
+
+    <div class="form-group">
+        <label for="alicuota">Alícuota IVA:</label>
+        <select id="alicuota">
+            <option value="3">0%</option>
+            <option value="4">10.5%</option>
+            <option value="5" selected>21%</option>
+            <option value="6">27%</option>
+            <option value="8">5%</option>
+            <option value="9">2.5%</option>
+        </select>
+    </div>
+
+    <button onclick="fiscalizar()">Fiscalizar</button>
+    <button onclick="consultarUltimo()">Consultar Último Comprobante</button>
+    <button onclick="consultarEstadoTA()">Consultar Estado TA</button>
+    <button onclick="regenerarTA()">Regenerar TA</button>
+
+    <div id="resultado"></div>
+
     <script>
-        // Función para agregar alícuota
-        document.getElementById('addAlicuota').addEventListener('click', () => {
-            const container = document.getElementById('alicuotasContainer');
-            const template = container.children[0].cloneNode(true);
-            template.querySelectorAll('input').forEach(input => input.value = '');
-            container.appendChild(template);
-            setupRemoveButtons();
-        });
-
-        // Función para agregar tributo
-        document.getElementById('addTributo').addEventListener('click', () => {
-            const container = document.getElementById('tributosContainer');
-            const template = container.children[0].cloneNode(true);
-            template.querySelectorAll('input').forEach(input => {
-                if (input.name.includes('desc')) input.value = 'Impuesto Municipal';
-                else if (input.name.includes('id')) input.value = '99';
-                else input.value = '';
-            });
-            container.appendChild(template);
-            setupRemoveButtons();
-        });
-
-        // Configurar botones de eliminar
-        function setupRemoveButtons() {
-            document.querySelectorAll('.remove-alicuota').forEach(btn => {
-                btn.onclick = function() {
-                    if (document.querySelectorAll('.alicuota-item').length > 1) {
-                        this.closest('.alicuota-item').remove();
-                        calcularTotales();
-                    }
-                };
-            });
-
-            document.querySelectorAll('.remove-tributo').forEach(btn => {
-                btn.onclick = function() {
-                    if (document.querySelectorAll('.tributo-item').length > 1) {
-                        this.closest('.tributo-item').remove();
-                        calcularTotales();
-                    }
-                };
-            });
+        // Función para mostrar resultados
+        function mostrarResultado(data, esError = false) {
+            const resultado = document.getElementById('resultado');
+            resultado.textContent = JSON.stringify(data, null, 2);
+            resultado.className = esError ? 'error' : 'success';
         }
 
-        // Calcular totales
-        function calcularTotales() {
-            // Calcular IVA
-            let totalIVA = 0;
-            document.querySelectorAll('input[name="iva_importe[]"]').forEach(input => {
-                totalIVA += parseFloat(input.value) || 0;
-            });
-            document.querySelector('input[name="imp_iva"]').value = totalIVA.toFixed(2);
-
-            // Calcular tributos
-            let totalTributos = 0;
-            document.querySelectorAll('input[name="tributo_importe[]"]').forEach(input => {
-                totalTributos += parseFloat(input.value) || 0;
-            });
-            document.querySelector('input[name="imp_trib"]').value = totalTributos.toFixed(2);
-
-            // Calcular total
-            const neto = parseFloat(document.querySelector('input[name="imp_neto"]').value) || 0;
-            const totConc = parseFloat(document.querySelector('input[name="imp_tot_conc"]').value) || 0;
-            const opEx = parseFloat(document.querySelector('input[name="imp_op_ex"]').value) || 0;
-            
-            const total = neto + totConc + opEx + totalIVA + totalTributos;
-            document.querySelector('input[name="imp_total"]').value = total.toFixed(2);
+        // Función para obtener la API Key
+        function getApiKey() {
+            const apiKey = document.getElementById('apiKey').value;
+            if (!apiKey) {
+                mostrarResultado({ error: "Debe ingresar una API Key" }, true);
+                return null;
+            }
+            return apiKey;
         }
 
-        // Eventos para recalcular totales
-        document.querySelectorAll('input[name="imp_neto"], input[name="imp_tot_conc"], input[name="imp_op_ex"]').forEach(input => {
-            input.addEventListener('input', calcularTotales);
-        });
+        // Función para realizar peticiones con API Key
+        async function fetchWithApiKey(url, options = {}) {
+            const apiKey = getApiKey();
+            if (!apiKey) return;
 
-        document.querySelectorAll('input[name="iva_importe[]"], input[name="tributo_importe[]"]').forEach(input => {
-            input.addEventListener('input', calcularTotales);
-        });
+            const headers = {
+                'Content-Type': 'application/json',
+                'X-API-Key': apiKey,
+                ...options.headers
+            };
 
-        // Formatear fechas al enviar
-        document.getElementById('comprobanteForm').addEventListener('submit', async (e) => {
-            e.preventDefault();
-            
             try {
-                const formData = new FormData(e.target);
-                const datos = Object.fromEntries(formData.entries());
-                
-                // Formatear fechas
-                ['cbte_fch', 'fch_serv_desde', 'fch_serv_hasta'].forEach(field => {
-                    if (datos[field]) {
-                        datos[field] = datos[field].replace(/-/g, '');
-                    }
-                });
-
-                // Procesar alícuotas
-                const alicuotas = [];
-                const ivaTipos = formData.getAll('iva_tipo[]');
-                const ivaBases = formData.getAll('iva_base[]');
-                const ivaImportes = formData.getAll('iva_importe[]');
-
-                for (let i = 0; i < ivaTipos.length; i++) {
-                    if (ivaBases[i] && ivaImportes[i]) {
-                        alicuotas.push({
-                            Id: ivaTipos[i],
-                            BaseImp: parseFloat(ivaBases[i]),
-                            Importe: parseFloat(ivaImportes[i])
-                        });
-                    }
+                const response = await fetch(url, { ...options, headers });
+                const data = await response.json();
+                if (!response.ok) {
+                    throw new Error(data.error || 'Error en la petición');
                 }
-                datos.alicuotas = alicuotas;
-
-                // Procesar tributos
-                const tributos = [];
-                const tributoIds = formData.getAll('tributo_id[]');
-                const tributoDescs = formData.getAll('tributo_desc[]');
-                const tributoBases = formData.getAll('tributo_base[]');
-                const tributoAlics = formData.getAll('tributo_alic[]');
-                const tributoImportes = formData.getAll('tributo_importe[]');
-
-                for (let i = 0; i < tributoIds.length; i++) {
-                    if (tributoBases[i] && tributoImportes[i]) {
-                        tributos.push({
-                            Id: tributoIds[i],
-                            Desc: tributoDescs[i],
-                            BaseImp: parseFloat(tributoBases[i]),
-                            Alic: parseFloat(tributoAlics[i]),
-                            Importe: parseFloat(tributoImportes[i])
-                        });
-                    }
-                }
-                datos.tributos = tributos;
-
-                // Convertir campos numéricos
-                ['tipo_comprobante', 'punto_venta', 'doc_tipo', 'imp_neto', 'imp_iva', 'imp_total', 'concepto', 'condicion_iva_receptor'].forEach(field => {
-                    if (datos[field]) {
-                        datos[field] = parseFloat(datos[field]);
-                    }
-                });
-                
-                console.log('Enviando datos:', datos);  // Debug log
-                
-                const response = await fetch('/fiscalizar', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(datos)
-                });
-                
-                let resultado;
-                const contentType = response.headers.get("content-type") || "";
-
-                if (contentType.includes("application/json")) {
-                    resultado = await response.json();
-                } else {
-                    const textoPlano = await response.text();
-                    throw new Error("Respuesta inesperada del servidor:\n" + textoPlano);
-                }
-
-                
-                const resultadoCard = document.getElementById('resultadoCard');
-                const resultadoPre = document.getElementById('resultado');
-                
-                resultadoCard.classList.remove('d-none');
-                if (response.ok) {
-                    resultadoPre.textContent = JSON.stringify(resultado, null, 2);
-                    resultadoPre.classList.remove('text-danger');
-                    resultadoPre.classList.add('text-success');
-                } else {
-                    const errorMsg = resultado.error || 'Error desconocido';
-                    console.error('Error detallado:', errorMsg);  // Debug log
-                    resultadoPre.textContent = `Error: ${errorMsg}`;
-                    resultadoPre.classList.remove('text-success');
-                    resultadoPre.classList.add('text-danger');
-                }
+                return data;
             } catch (error) {
-                console.error('Error completo:', error);  // Debug log
-                const resultadoCard = document.getElementById('resultadoCard');
-                const resultadoPre = document.getElementById('resultado');
-                resultadoCard.classList.remove('d-none');
-                resultadoPre.textContent = `Error al procesar la solicitud: ${error.message}`;
-                resultadoPre.classList.remove('text-success');
-                resultadoPre.classList.add('text-danger');
+                mostrarResultado({ error: error.message }, true);
+                throw error;
             }
-        });
+        }
 
-        // Validar número de documento según tipo
-        document.querySelector('select[name="doc_tipo"]').addEventListener('change', (e) => {
-            const docNroInput = document.querySelector('input[name="doc_nro"]');
-            const docTipo = e.target.value;
-            
-            if (docTipo === '99') {
-                docNroInput.value = '0';
-                docNroInput.readOnly = true;
-            } else {
-                docNroInput.readOnly = false;
-                docNroInput.value = '';
+        // Función para fiscalizar
+        async function fiscalizar() {
+            try {
+                const impNeto = parseFloat(document.getElementById('impNeto').value) || 0;
+                const alicuotaId = document.getElementById('alicuota').value;
+                const alicuotaPorcentaje = {
+                    '3': 0,
+                    '4': 0.105,
+                    '5': 0.21,
+                    '6': 0.27,
+                    '8': 0.05,
+                    '9': 0.025
+                }[alicuotaId];
+
+                const data = {
+                    tipo_comprobante: parseInt(document.getElementById('tipoComprobante').value),
+                    doc_tipo: parseInt(document.getElementById('docTipo').value),
+                    doc_nro: document.getElementById('docNro').value,
+                    imp_neto: impNeto.toFixed(2),
+                    alicuotas: [{
+                        Id: alicuotaId,
+                        BaseImp: impNeto.toFixed(2),
+                        Importe: (impNeto * alicuotaPorcentaje).toFixed(2)
+                    }]
+                };
+
+                const resultado = await fetchWithApiKey('/fiscalizar', {
+                    method: 'POST',
+                    body: JSON.stringify(data)
+                });
+                mostrarResultado(resultado);
+            } catch (error) {
+                console.error('Error:', error);
             }
-        });
+        }
 
-        // Inicializar botones de eliminar
-        setupRemoveButtons();
+        // Función para consultar último comprobante
+        async function consultarUltimo() {
+            try {
+                const tipoComprobante = document.getElementById('tipoComprobante').value;
+                const resultado = await fetchWithApiKey(`/ultimo-comprobante?cbte_tipo=${tipoComprobante}`);
+                mostrarResultado(resultado);
+            } catch (error) {
+                console.error('Error:', error);
+            }
+        }
+
+        // Función para consultar estado del TA
+        async function consultarEstadoTA() {
+            try {
+                const resultado = await fetchWithApiKey('/estado-ta');
+                mostrarResultado(resultado);
+            } catch (error) {
+                console.error('Error:', error);
+            }
+        }
+
+        // Función para regenerar TA
+        async function regenerarTA() {
+            try {
+                const resultado = await fetchWithApiKey('/regenerar-ta', {
+                    method: 'POST'
+                });
+                mostrarResultado(resultado);
+            } catch (error) {
+                console.error('Error:', error);
+            }
+        }
     </script>
 </body>
 </html>
