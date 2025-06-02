@@ -1,4 +1,3 @@
-
 """
 Rutas para fiscalización de comprobantes.
 Contiene los endpoints para fiscalizar, consultar y manejar tokens.
@@ -9,6 +8,7 @@ from flask_limiter.util import get_remote_address
 import xml.etree.ElementTree as ET
 from lxml import etree
 from datetime import datetime
+import requests
 
 from app.middleware import require_api_key, sanitize_input, validate_input_data
 from app.utils.afip_utils import (
@@ -60,16 +60,51 @@ def fiscalizar():
             datos_cbte_xml = construir_xml_comprobante(datos)
             respuesta_afip = enviar_comprobante(token, sign, CUIT, datos_cbte_xml)
             
-            # Verificar errores en la respuesta
-            xml_resp = etree.fromstring(respuesta_afip.encode())
-            errores = xml_resp.findall(".//Err")
-            if errores:
-                mensajes_error = [f"{err.findtext('Code')}: {err.findtext('Msg')}" for err in errores]
-                return jsonify({"error": "Error de AFIP: " + " | ".join(mensajes_error)}), 400
+            # Verificar resultado de FeCabResp
+            if not respuesta_afip.get('resultado'):
+                return jsonify({"error": "No se recibió resultado de AFIP"}), 400
 
-            return jsonify({"xml_afip": respuesta_afip})
+            if respuesta_afip['resultado'] != 'A':
+                mensaje = "Error de AFIP: "
+                if respuesta_afip.get('errors'):
+                    mensaje += " | ".join([f"{err['code']}: {err['msg']}" for err in respuesta_afip['errors']])
+                else:
+                    mensaje += "Respuesta rechazada sin detalles"
+                return jsonify({"error": mensaje}), 400
+
+            # Verificar respuesta del comprobante
+            if not respuesta_afip.get('fe_det_resp'):
+                return jsonify({"error": "No se recibió respuesta del comprobante"}), 400
+
+            detalle = respuesta_afip['fe_det_resp'][0]
+            if not detalle.get('resultado'):
+                return jsonify({"error": "No se recibió resultado del comprobante"}), 400
+
+            if detalle['resultado'] != 'A':
+                mensaje = "Error en comprobante: "
+                if detalle.get('observaciones'):
+                    mensaje += " | ".join([f"{obs['code']}: {obs['msg']}" for obs in detalle['observaciones']])
+                else:
+                    mensaje += "Comprobante rechazado sin detalles"
+                return jsonify({"error": mensaje}), 400
+
+            # Si todo está bien, devolver la respuesta completa
+            return jsonify({
+                "resultado": "success",
+                "comprobante": {
+                    "cae": detalle.get('cae'),
+                    "cae_fch_vto": detalle.get('cae_fch_vto'),
+                    "cbte_desde": detalle.get('cbte_desde'),
+                    "cbte_hasta": detalle.get('cbte_hasta'),
+                    "cbte_fch": detalle.get('cbte_fch'),
+                    "resultado": detalle.get('resultado'),
+                    "observaciones": detalle.get('observaciones', [])
+                },
+                "xml_original": datos_cbte_xml
+            })
 
         except ValueError as e:
+            logging.error(f"Error de validación: {str(e)}")
             return jsonify({"error": str(e)}), 400
 
     except ValueError as e:
@@ -87,8 +122,28 @@ def ultimo_comprobante():
         pto_vta = request.args.get('pto_vta', type=int, default=12)
         cbte_tipo = request.args.get('cbte_tipo', type=int, default=1)
 
-        resultado = consultar_ultimo_comprobante(pto_vta, cbte_tipo)
-        
+        try:
+            resultado = consultar_ultimo_comprobante(pto_vta, cbte_tipo)
+        except requests.exceptions.ConnectionError as e:
+            logging.error(f"Error de conexión al consultar último comprobante: {str(e)}")
+            return jsonify({
+                "error": "Error de conexión con AFIP. Por favor, intente nuevamente en unos segundos.",
+                "detalles": "El servicio de AFIP no está respondiendo correctamente."
+            }), 503
+        except requests.exceptions.Timeout as e:
+            logging.error(f"Timeout al consultar último comprobante: {str(e)}")
+            return jsonify({
+                "error": "Timeout al consultar con AFIP. Por favor, intente nuevamente.",
+                "detalles": "El servicio de AFIP está tardando demasiado en responder."
+            }), 504
+        except Exception as e:
+            logging.error(f"Error al consultar último comprobante: {str(e)}", exc_info=True)
+            return jsonify({
+                "error": "Error al consultar con AFIP",
+                "detalles": str(e)
+            }), 500
+
+        # Si llegamos aquí, la consulta fue exitosa
         respuesta = {
             "ultimo_comprobante": resultado,
             "siguiente_numero": resultado['ultimo_numero'] + 1 if resultado['ultimo_numero'] is not None else 1,
@@ -102,8 +157,11 @@ def ultimo_comprobante():
         return jsonify(respuesta)
 
     except Exception as e:
-        logging.error(f"Error en último comprobante: {str(e)}", exc_info=True)
-        return jsonify({"error": "Error interno del servidor"}), 500
+        logging.error(f"Error inesperado en último comprobante: {str(e)}", exc_info=True)
+        return jsonify({
+            "error": "Error interno del servidor",
+            "detalles": "Ocurrió un error inesperado al procesar la solicitud."
+        }), 500
 
 @require_api_key
 @limiter.limit("30 per minute")
