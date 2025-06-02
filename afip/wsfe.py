@@ -71,40 +71,176 @@ def enviar_comprobante(token, sign, cuit, datos_cbte_xml):
             wsse=UsernameToken(token, sign)
         )
 
-        # Definir namespaces
-        namespaces = {
-            'ar': 'http://ar.gov.afip.dif.FEV1/',
-            'soapenv': 'http://schemas.xmlsoap.org/soap/envelope/'
-        }
-
-        # Registrar los namespaces
-        for prefix, uri in namespaces.items():
-            ET.register_namespace(prefix, uri)
-
-        # Parsear el XML con los namespaces registrados
+        # Parsear el XML del comprobante
         root = ET.fromstring(datos_cbte_xml)
         
-        # Preparar parámetros
+        # Extraer los elementos necesarios
+        fe_cab_req = root.find('.//{http://ar.gov.afip.dif.FEV1/}FeCabReq')
+        fe_det_req = root.find('.//{http://ar.gov.afip.dif.FEV1/}FeDetReq')
+        
+        if fe_cab_req is None or fe_det_req is None:
+            raise ValueError("El XML del comprobante no tiene la estructura esperada")
+
+        # Preparar parámetros para el servicio
         params = {
             'Auth': {
                 'Token': token,
                 'Sign': sign,
                 'Cuit': cuit
             },
-            'FeCAEReq': root
+            'FeCAEReq': {
+                'FeCabReq': {
+                    'CantReg': int(fe_cab_req.find('.//{http://ar.gov.afip.dif.FEV1/}CantReg').text),
+                    'PtoVta': int(fe_cab_req.find('.//{http://ar.gov.afip.dif.FEV1/}PtoVta').text),
+                    'CbteTipo': int(fe_cab_req.find('.//{http://ar.gov.afip.dif.FEV1/}CbteTipo').text)
+                },
+                'FeDetReq': {
+                    'FECAEDetRequest': {
+                        'Concepto': int(fe_det_req.find('.//{http://ar.gov.afip.dif.FEV1/}Concepto').text),
+                        'DocTipo': int(fe_det_req.find('.//{http://ar.gov.afip.dif.FEV1/}DocTipo').text),
+                        'DocNro': int(fe_det_req.find('.//{http://ar.gov.afip.dif.FEV1/}DocNro').text),
+                        'CbteDesde': int(fe_det_req.find('.//{http://ar.gov.afip.dif.FEV1/}CbteDesde').text),
+                        'CbteHasta': int(fe_det_req.find('.//{http://ar.gov.afip.dif.FEV1/}CbteHasta').text),
+                        'CbteFch': fe_det_req.find('.//{http://ar.gov.afip.dif.FEV1/}CbteFch').text,
+                        'ImpTotal': float(fe_det_req.find('.//{http://ar.gov.afip.dif.FEV1/}ImpTotal').text),
+                        'ImpTotConc': float(fe_det_req.find('.//{http://ar.gov.afip.dif.FEV1/}ImpTotConc').text),
+                        'ImpNeto': float(fe_det_req.find('.//{http://ar.gov.afip.dif.FEV1/}ImpNeto').text),
+                        'ImpOpEx': float(fe_det_req.find('.//{http://ar.gov.afip.dif.FEV1/}ImpOpEx').text),
+                        'ImpTrib': float(fe_det_req.find('.//{http://ar.gov.afip.dif.FEV1/}ImpTrib').text),
+                        'ImpIVA': float(fe_det_req.find('.//{http://ar.gov.afip.dif.FEV1/}ImpIVA').text),
+                        'MonId': fe_det_req.find('.//{http://ar.gov.afip.dif.FEV1/}MonId').text,
+                        'MonCotiz': float(fe_det_req.find('.//{http://ar.gov.afip.dif.FEV1/}MonCotiz').text),
+                        'CondicionIVAReceptorId': int(fe_det_req.find('.//{http://ar.gov.afip.dif.FEV1/}CondicionIVAReceptorId').text)
+                    }
+                }
+            }
         }
 
+        # Agregar campos opcionales si existen
+        fch_serv_desde = fe_det_req.find('.//{http://ar.gov.afip.dif.FEV1/}FchServDesde')
+        if fch_serv_desde is not None and fch_serv_desde.text:
+            params['FeCAEReq']['FeDetReq']['FECAEDetRequest']['FchServDesde'] = fch_serv_desde.text
+
+        fch_serv_hasta = fe_det_req.find('.//{http://ar.gov.afip.dif.FEV1/}FchServHasta')
+        if fch_serv_hasta is not None and fch_serv_hasta.text:
+            params['FeCAEReq']['FeDetReq']['FECAEDetRequest']['FchServHasta'] = fch_serv_hasta.text
+
+        fch_vto_pago = fe_det_req.find('.//{http://ar.gov.afip.dif.FEV1/}FchVtoPago')
+        if fch_vto_pago is not None and fch_vto_pago.text:
+            params['FeCAEReq']['FeDetReq']['FECAEDetRequest']['FchVtoPago'] = fch_vto_pago.text
+
+        # Agregar alícuotas si existen
+        iva = fe_det_req.find('.//{http://ar.gov.afip.dif.FEV1/}Iva')
+        if iva is not None:
+            alic_iva_list = []
+            for alic_iva in iva.findall('.//{http://ar.gov.afip.dif.FEV1/}AlicIva'):
+                alic_iva_list.append({
+                    'Id': int(alic_iva.find('.//{http://ar.gov.afip.dif.FEV1/}Id').text),
+                    'BaseImp': float(alic_iva.find('.//{http://ar.gov.afip.dif.FEV1/}BaseImp').text),
+                    'Importe': float(alic_iva.find('.//{http://ar.gov.afip.dif.FEV1/}Importe').text)
+                })
+            if alic_iva_list:
+                params['FeCAEReq']['FeDetReq']['FECAEDetRequest']['Iva'] = {'AlicIva': alic_iva_list}
+
+        # Agregar tributos si existen
+        tributos = fe_det_req.find('.//{http://ar.gov.afip.dif.FEV1/}Tributos')
+        if tributos is not None:
+            tributos_list = []
+            for tributo in tributos.findall('.//{http://ar.gov.afip.dif.FEV1/}Tributo'):
+                tributos_list.append({
+                    'Id': int(tributo.find('.//{http://ar.gov.afip.dif.FEV1/}Id').text),
+                    'Desc': tributo.find('.//{http://ar.gov.afip.dif.FEV1/}Desc').text,
+                    'BaseImp': float(tributo.find('.//{http://ar.gov.afip.dif.FEV1/}BaseImp').text),
+                    'Alic': float(tributo.find('.//{http://ar.gov.afip.dif.FEV1/}Alic').text),
+                    'Importe': float(tributo.find('.//{http://ar.gov.afip.dif.FEV1/}Importe').text)
+                })
+            if tributos_list:
+                params['FeCAEReq']['FeDetReq']['FECAEDetRequest']['Tributos'] = {'Tributo': tributos_list}
+
+        print("Parámetros para el servicio:", params)
+        
         # Llamar al servicio
         response = client.service.FECAESolicitar(**params)
         
-        # Convertir la respuesta a XML
-        xml_response = ET.tostring(response, encoding='unicode', pretty_print=True)
+        # Log de la respuesta cruda
+        print("Respuesta cruda de AFIP:", response)
+        print("Tipo de respuesta:", type(response))
+        print("Atributos de respuesta:", dir(response))
         
+        # Convertir la respuesta a un diccionario
+        response_dict = {
+            'resultado': None,
+            'errors': [],
+            'events': [],
+            'fe_det_resp': []
+        }
+
+        # Obtener resultado de FeCabResp
+        if hasattr(response, 'FeCabResp') and response.FeCabResp is not None:
+            response_dict['resultado'] = getattr(response.FeCabResp, 'Resultado', None)
+            print("Resultado de FeCabResp:", response_dict['resultado'])
+
+            # Si el resultado es 'A' (Aprobado), no hay errores
+            if response_dict['resultado'] == 'A':
+                response_dict['errors'] = []
+            else:
+                # Si no es 'A', buscar errores en la respuesta
+                if hasattr(response, 'Errors') and response.Errors is not None:
+                    for error in response.Errors:
+                        if hasattr(error, 'Code') and hasattr(error, 'Msg'):
+                            response_dict['errors'].append({
+                                'code': error.Code,
+                                'msg': error.Msg
+                            })
+
+        # Procesar eventos si existen
+        if hasattr(response, 'Events') and response.Events is not None:
+            for event in response.Events:
+                if hasattr(event, 'Code') and hasattr(event, 'Msg'):
+                    response_dict['events'].append({
+                        'code': event.Code,
+                        'msg': event.Msg
+                    })
+
+        # Procesar la respuesta de los comprobantes
+        if hasattr(response, 'FeDetResp') and response.FeDetResp is not None:
+            if hasattr(response.FeDetResp, 'FECAEDetResponse'):
+                for det in response.FeDetResp.FECAEDetResponse:
+                    det_dict = {
+                        'concepto': getattr(det, 'Concepto', None),
+                        'doc_tipo': getattr(det, 'DocTipo', None),
+                        'doc_nro': getattr(det, 'DocNro', None),
+                        'cbte_desde': getattr(det, 'CbteDesde', None),
+                        'cbte_hasta': getattr(det, 'CbteHasta', None),
+                        'cbte_fch': getattr(det, 'CbteFch', None),
+                        'resultado': getattr(det, 'Resultado', None),
+                        'cae': getattr(det, 'CAE', None),
+                        'cae_fch_vto': getattr(det, 'CAEFchVto', None),
+                        'observaciones': []
+                    }
+
+                    # Procesar observaciones si existen
+                    if hasattr(det, 'Observaciones') and det.Observaciones is not None:
+                        for obs in det.Observaciones:
+                            if hasattr(obs, 'Code') and hasattr(obs, 'Msg'):
+                                det_dict['observaciones'].append({
+                                    'code': obs.Code,
+                                    'msg': obs.Msg
+                                })
+
+                    response_dict['fe_det_resp'].append(det_dict)
+                    print("Detalle del comprobante procesado:", det_dict)
+
+                    # Si el comprobante fue aprobado, no hay errores
+                    if det_dict['resultado'] == 'A':
+                        response_dict['errors'] = []
+
         # Guardar en archivo para debugging
-        with open("xml_respuesta.xml", "w", encoding="utf-8") as f:
-            f.write(xml_response)
+        import json
+        with open("respuesta_afip.json", "w", encoding="utf-8") as f:
+            json.dump(response_dict, f, indent=2, ensure_ascii=False)
             
-        return xml_response
+        return response_dict
 
     except Exception as e:
         # Si hay un error en la respuesta SOAP, intentar extraer el mensaje de error
@@ -141,19 +277,30 @@ def construir_xml_comprobante(datos):
 
     # Validaciones iniciales
     imp_neto = float(datos.get('imp_neto', '0.00'))
-    if imp_neto > 0:
-        if not datos.get('alicuotas'):
-            raise ValueError("Si el importe neto es mayor a 0, se deben especificar las alícuotas de IVA")
-        if not datos.get('condicion_iva_receptor'):
-            raise ValueError("Si el importe neto es mayor a 0, se debe especificar la condición IVA del receptor")
-        
-        # Validar que la suma de las bases imponibles coincida con el importe neto
-        suma_bases = sum(float(a.get('BaseImp', 0)) for a in datos.get('alicuotas', []))
-        if abs(suma_bases - imp_neto) > 0.01:  # Permitimos una pequeña diferencia por redondeo
-            raise ValueError(
-                f"La suma de las bases imponibles ({suma_bases:.2f}) no coincide con el importe neto ({imp_neto:.2f}). "
-                f"Las bases imponibles deben sumar exactamente el importe neto."
-            )
+    
+    # Ajustes especiales para comprobante tipo C (CbteTipo=11)
+    if datos['tipo_comprobante'] == 11:
+        print("Ajustando valores para comprobante tipo C")
+        datos['imp_tot_conc'] = '0.00'
+        datos['imp_op_ex'] = '0.00'
+        datos['imp_iva'] = '0.00'
+        datos['alicuotas'] = []  # Los comprobantes tipo C no tienen IVA
+        datos['condicion_iva_receptor'] = '5'  # Consumidor Final para tipo C
+    else:
+        # Solo validar IVA para comprobantes que no son tipo C
+        if imp_neto > 0:
+            if not datos.get('alicuotas'):
+                raise ValueError("Si el importe neto es mayor a 0, se deben especificar las alícuotas de IVA")
+            if not datos.get('condicion_iva_receptor'):
+                raise ValueError("Si el importe neto es mayor a 0, se debe especificar la condición IVA del receptor")
+            
+            # Validar que la suma de las bases imponibles coincida con el importe neto
+            suma_bases = sum(float(a.get('BaseImp', 0)) for a in datos.get('alicuotas', []))
+            if abs(suma_bases - imp_neto) > 0.01:  # Permitimos una pequeña diferencia por redondeo
+                raise ValueError(
+                    f"La suma de las bases imponibles ({suma_bases:.2f}) no coincide con el importe neto ({imp_neto:.2f}). "
+                    f"Las bases imponibles deben sumar exactamente el importe neto."
+                )
 
     # Asegurar que los valores numéricos tengan el formato correcto
     def formatear_numero(valor, decimales=2):
@@ -198,15 +345,6 @@ def construir_xml_comprobante(datos):
                 f"Importe calculado: {formatear_numero(importe_calculado)}, "
                 f"Importe ingresado: {importe}"
             )
-
-    # Ajustes especiales para comprobante tipo C (CbteTipo=11)
-    if datos['tipo_comprobante'] == 11:
-        print("Ajustando valores para comprobante tipo C")
-        datos['imp_tot_conc'] = '0.00'
-        datos['imp_op_ex'] = '0.00'
-        datos['imp_iva'] = '0.00'
-        datos['alicuotas'] = []
-        datos['condicion_iva_receptor'] = '5'  # Consumidor Final para tipo C
 
     # Formatear todos los valores numéricos
     campos_numericos = ['imp_neto', 'imp_tot_conc', 'imp_op_ex', 'imp_trib', 'imp_iva', 'imp_total']
@@ -274,42 +412,39 @@ def construir_xml_comprobante(datos):
         iva_xml = f"<ar:Iva>{iva_items}\n</ar:Iva>"
         print("XML de IVA generado:", iva_xml)
 
-    # Construcción de la cabecera del comprobante
-    cabecera = f"""<?xml version="1.0" encoding="UTF-8"?>
-<ar:FeCabReq xmlns:ar="{namespaces['ar']}">
-    <ar:CantReg>1</ar:CantReg>
-    <ar:PtoVta>{int(datos['punto_venta'])}</ar:PtoVta>
-    <ar:CbteTipo>{int(datos['tipo_comprobante'])}</ar:CbteTipo>
-</ar:FeCabReq>"""
-    print("Cabecera generada:", cabecera)
+    # Construir el XML completo como un único documento
+    xml_final = f"""<?xml version="1.0" encoding="UTF-8"?>
+<ar:FeCAEReq xmlns:ar="{namespaces['ar']}">
+    <ar:FeCabReq>
+        <ar:CantReg>1</ar:CantReg>
+        <ar:PtoVta>{int(datos['punto_venta'])}</ar:PtoVta>
+        <ar:CbteTipo>{int(datos['tipo_comprobante'])}</ar:CbteTipo>
+    </ar:FeCabReq>
+    <ar:FeDetReq>
+        <ar:FECAEDetRequest>
+            <ar:Concepto>{int(datos['concepto'])}</ar:Concepto>
+            <ar:DocTipo>{int(datos['doc_tipo'])}</ar:DocTipo>
+            <ar:DocNro>{int(datos['doc_nro'])}</ar:DocNro>
+            <ar:CbteDesde>{int(datos['cbte_desde'])}</ar:CbteDesde>
+            <ar:CbteHasta>{int(datos['cbte_hasta'])}</ar:CbteHasta>
+            <ar:CbteFch>{datos['cbte_fch']}</ar:CbteFch>
+            <ar:ImpTotal>{datos['imp_total']}</ar:ImpTotal>
+            <ar:ImpTotConc>{datos.get('imp_tot_conc', '0.00')}</ar:ImpTotConc>
+            <ar:ImpNeto>{datos['imp_neto']}</ar:ImpNeto>
+            <ar:ImpOpEx>{datos.get('imp_op_ex', '0.00')}</ar:ImpOpEx>
+            <ar:ImpTrib>{datos.get('imp_trib', '0.00')}</ar:ImpTrib>
+            <ar:ImpIVA>{datos['imp_iva']}</ar:ImpIVA>
+            <ar:FchServDesde>{datos.get('fch_serv_desde', '')}</ar:FchServDesde>
+            <ar:FchServHasta>{datos.get('fch_serv_hasta', '')}</ar:FchServHasta>
+            <ar:FchVtoPago>{datos.get('fch_vto_pago', '')}</ar:FchVtoPago>
+            <ar:MonId>{datos['mon_id']}</ar:MonId>
+            <ar:MonCotiz>{datos.get('mon_cotiz', '1.000')}</ar:MonCotiz>
+            <ar:CondicionIVAReceptorId>{int(datos.get('condicion_iva_receptor', '5'))}</ar:CondicionIVAReceptorId>
+            {tributos_xml}
+            {iva_xml}
+        </ar:FECAEDetRequest>
+    </ar:FeDetReq>
+</ar:FeCAEReq>"""
 
-    # Construcción del detalle del comprobante
-    detalle = f"""<ar:FeDetReq xmlns:ar="{namespaces['ar']}">
-    <ar:FECAEDetRequest>
-        <ar:Concepto>{int(datos['concepto'])}</ar:Concepto>
-        <ar:DocTipo>{int(datos['doc_tipo'])}</ar:DocTipo>
-        <ar:DocNro>{int(datos['doc_nro'])}</ar:DocNro>
-        <ar:CbteDesde>{int(datos['cbte_desde'])}</ar:CbteDesde>
-        <ar:CbteHasta>{int(datos['cbte_hasta'])}</ar:CbteHasta>
-        <ar:CbteFch>{datos['cbte_fch']}</ar:CbteFch>
-        <ar:ImpTotal>{datos['imp_total']}</ar:ImpTotal>
-        <ar:ImpTotConc>{datos.get('imp_tot_conc', '0.00')}</ar:ImpTotConc>
-        <ar:ImpNeto>{datos['imp_neto']}</ar:ImpNeto>
-        <ar:ImpOpEx>{datos.get('imp_op_ex', '0.00')}</ar:ImpOpEx>
-        <ar:ImpTrib>{datos.get('imp_trib', '0.00')}</ar:ImpTrib>
-        <ar:ImpIVA>{datos['imp_iva']}</ar:ImpIVA>
-        <ar:FchServDesde>{datos.get('fch_serv_desde', '')}</ar:FchServDesde>
-        <ar:FchServHasta>{datos.get('fch_serv_hasta', '')}</ar:FchServHasta>
-        <ar:FchVtoPago>{datos.get('fch_vto_pago', '')}</ar:FchVtoPago>
-        <ar:MonId>{datos['mon_id']}</ar:MonId>
-        <ar:MonCotiz>{datos.get('mon_cotiz', '1.000')}</ar:MonCotiz>
-        <ar:CondicionIVAReceptorId>{int(datos.get('condicion_iva_receptor', '5'))}</ar:CondicionIVAReceptorId>
-        {tributos_xml}
-        {iva_xml}
-    </ar:FECAEDetRequest>
-</ar:FeDetReq>"""
-    print("Detalle generado:", detalle)
-
-    xml_final = f"{cabecera}{detalle}"
     print("XML final generado:", xml_final)
     return xml_final

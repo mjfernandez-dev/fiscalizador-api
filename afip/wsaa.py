@@ -1,5 +1,5 @@
 """
-Módulo para manejo de autenticación con AFIP.
+Módulo para manejo de autenticación con ARCA.
 Contiene funciones para obtener y validar tokens de acceso.
 """
 import os, base64, subprocess

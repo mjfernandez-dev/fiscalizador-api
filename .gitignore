@@ -1,11 +1,69 @@
-afip/__pycache__/wsaa.cpython-310.pyc
-afip/__pycache__/wsfe.cpython-310.pyc
-xml_enviado.xml
-tra.xml
-tra.cms
-ta.xml
-afip/__pycache__/config.cpython-310.pyc
-afip/__pycache__/config.cpython-310.pyc
-afip/__pycache__/config.cpython-310.pyc
-afip/__pycache__/wsaa.cpython-310.pyc
-afip/__pycache__/wsfe.cpython-310.pyc
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Archivos de AFIP
+*.xml
+*.cms
+*.tra
+*.crt
+*.key
+*.pem
+*.cer
+*.crt
+*.key
+*.pem
+*.cer
+*.cms
+*.tra
+*.xml
+*.json
+
+# Entorno virtual
+venv/
+env/
+ENV/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+
+# Logs
+*.log
+logs/
+log/
+
+# Archivos de configuración local
+.env
+.env.local
+.env.*.local
+config.local.py
+*.local.py
+
+# Archivos temporales
+*.tmp
+*.temp
+*.bak
+*.backup
+*~

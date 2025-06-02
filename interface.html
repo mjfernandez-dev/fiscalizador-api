@@ -212,7 +212,7 @@
                 // Log para depuración
                 console.log('Datos a enviar:', JSON.stringify(data, null, 2));
 
-                const resultado = await fetchWithApiKey('/afip/fiscalizar', {
+                const resultado = await fetchWithApiKey('/ARCA/fiscalizar', {
                     method: 'POST',
                     body: JSON.stringify(data)
                 });
@@ -231,7 +231,7 @@
         async function consultarUltimo() {
             try {
                 const tipoComprobante = document.getElementById('tipoComprobante').value;
-                const resultado = await fetchWithApiKey(`/afip/ultimo-comprobante?cbte_tipo=${tipoComprobante}`);
+                const resultado = await fetchWithApiKey(`/ARCA/ultimo-comprobante?cbte_tipo=${tipoComprobante}`);
                 mostrarResultado(resultado);
             } catch (error) {
                 console.error('Error:', error);
@@ -241,7 +241,7 @@
         // Función para consultar estado del TA
         async function consultarEstadoTA() {
             try {
-                const resultado = await fetchWithApiKey('/afip/estado-ta');
+                const resultado = await fetchWithApiKey('/ARCA/estado-ta');
                 mostrarResultado(resultado);
             } catch (error) {
                 console.error('Error:', error);
@@ -251,7 +251,7 @@
         // Función para regenerar TA
         async function regenerarTA() {
             try {
-                const resultado = await fetchWithApiKey('/afip/regenerar-ta', {
+                const resultado = await fetchWithApiKey('/ARCA/regenerar-ta', {
                     method: 'POST'
                 });
                 mostrarResultado(resultado);

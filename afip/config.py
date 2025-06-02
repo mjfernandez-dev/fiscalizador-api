@@ -6,3 +6,4 @@ from app.config import CERT, KEY, CUIT, API_KEY, TOKEN_EXPIRY_MINUTES, MAX_REQUE
 
 # Re-exportar las variables para mantener compatibilidad
 __all__ = ['CERT', 'KEY', 'CUIT', 'API_KEY', 'TOKEN_EXPIRY_MINUTES', 'MAX_REQUESTS_PER_MINUTE', 'ALLOWED_ORIGINS']
+
