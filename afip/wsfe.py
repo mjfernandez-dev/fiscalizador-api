@@ -271,7 +271,10 @@ def construir_xml_comprobante(datos):
     # Validar CUIT del receptor si es tipo 80 (CUIT)
     if datos.get('doc_tipo') == 80 and datos.get('doc_nro'):
         try:
-            validar_cuit_receptor(token, sign, datos['doc_nro'])
+            # Obtener token y sign para validar CUIT
+            ta_xml = obtener_ta(CERT, KEY, servicio='ws_sr_padron_a5')
+            token_padron, sign_padron = extraer_token_sign(ta_xml)
+            validar_cuit_receptor(token_padron, sign_padron, datos['doc_nro'])
         except ValueError as e:
             raise ValueError(f"Error en CUIT del receptor: {str(e)}")
 
