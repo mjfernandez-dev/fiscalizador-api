@@ -1,4 +1,4 @@
-# Fiscalizador ARCA API
+# Fiscalizador ARCA API.
 
 API intermediaria para la fiscalización de comprobantes electrónicos ARCA. Simplifica la integración con los servicios web de ARCA, manejando automáticamente la autenticación, validaciones y comunicación.
 
