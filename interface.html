@@ -424,13 +424,24 @@
                 const resultadoPre = document.getElementById('resultado');
                 
                 resultadoCard.classList.remove('d-none');
+                
                 if (response.ok) {
+                    // Respuesta exitosa
                     resultadoPre.textContent = JSON.stringify(resultado, null, 2);
                     resultadoPre.classList.remove('text-danger');
                     resultadoPre.classList.add('text-success');
+                    
+                    // Si hay observaciones, mostrarlas como advertencias
+                    if (resultado.observaciones && resultado.observaciones.length > 0) {
+                        const observacionesDiv = document.createElement('div');
+                        observacionesDiv.className = 'alert alert-warning mt-3';
+                        observacionesDiv.innerHTML = '<strong>Observaciones:</strong><br>' + 
+                            resultado.observaciones.join('<br>');
+                        resultadoCard.appendChild(observacionesDiv);
+                    }
                 } else {
+                    // Respuesta con error
                     const errorMsg = resultado.error || 'Error desconocido';
-                    console.error('Error detallado:', errorMsg);  // Debug log
                     resultadoPre.textContent = `Error: ${errorMsg}`;
                     resultadoPre.classList.remove('text-success');
                     resultadoPre.classList.add('text-danger');

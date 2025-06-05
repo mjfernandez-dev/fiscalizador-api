@@ -163,14 +163,17 @@ def fiscalizar():
             from lxml import etree
             xml_resp = etree.fromstring(respuesta_afip.encode())
             
-            # Verificar el resultado - usar la ruta correcta dentro de FeCabResp
-            resultado = xml_resp.findtext(".//{http://ar.gov.afip.dif.FEV1/}FeCabResp/{http://ar.gov.afip.dif.FEV1/}Resultado")
+            # Definir el namespace
+            ns = {'ns': 'http://ar.gov.afip.dif.FEV1/'}
+            
+            # Verificar el resultado usando la ruta correcta con namespace
+            resultado = xml_resp.findtext(".//ns:FeCabResp/ns:Resultado", namespaces=ns)
             app.logger.info(f"Resultado de AFIP: {resultado}")
             
             if resultado == "A":  # A = Aprobado
-                # Extraer la información exitosa usando las rutas correctas dentro de FECAEDetResponse
-                cae = xml_resp.findtext(".//{http://ar.gov.afip.dif.FEV1/}FECAEDetResponse/{http://ar.gov.afip.dif.FEV1/}CAE")
-                cae_fch_vto = xml_resp.findtext(".//{http://ar.gov.afip.dif.FEV1/}FECAEDetResponse/{http://ar.gov.afip.dif.FEV1/}CAEFchVto")
+                # Extraer la información exitosa usando las rutas correctas con namespace
+                cae = xml_resp.findtext(".//ns:FECAEDetResponse/ns:CAE", namespaces=ns)
+                cae_fch_vto = xml_resp.findtext(".//ns:FECAEDetResponse/ns:CAEFchVto", namespaces=ns)
                 
                 app.logger.info(f"CAE: {cae}, Fecha vto: {cae_fch_vto}")
                 
@@ -179,10 +182,10 @@ def fiscalizar():
                     return jsonify({"error": "Error de AFIP: La respuesta no contiene CAE o fecha de vencimiento"}), 500
                 
                 # Verificar si hay observaciones (advertencias) dentro de FECAEDetResponse
-                observaciones = xml_resp.findall(".//{http://ar.gov.afip.dif.FEV1/}FECAEDetResponse/{http://ar.gov.afip.dif.FEV1/}Observaciones/{http://ar.gov.afip.dif.FEV1/}Obs")
+                observaciones = xml_resp.findall(".//ns:FECAEDetResponse/ns:Observaciones/ns:Obs", namespaces=ns)
                 mensajes_obs = []
                 if observaciones:
-                    mensajes_obs = [f"{obs.findtext('{http://ar.gov.afip.dif.FEV1/}Code')}: {obs.findtext('{http://ar.gov.afip.dif.FEV1/}Msg')}" for obs in observaciones]
+                    mensajes_obs = [f"{obs.findtext('ns:Code', namespaces=ns)}: {obs.findtext('ns:Msg', namespaces=ns)}" for obs in observaciones]
                     app.logger.info(f"Observaciones de AFIP: {mensajes_obs}")
                 
                 respuesta = {
@@ -198,9 +201,9 @@ def fiscalizar():
                 
             elif resultado == "R":  # R = Rechazado
                 # Buscar observaciones en FECAEDetResponse
-                observaciones = xml_resp.findall(".//{http://ar.gov.afip.dif.FEV1/}FECAEDetResponse/{http://ar.gov.afip.dif.FEV1/}Observaciones/{http://ar.gov.afip.dif.FEV1/}Obs")
+                observaciones = xml_resp.findall(".//ns:FECAEDetResponse/ns:Observaciones/ns:Obs", namespaces=ns)
                 if observaciones:
-                    mensajes_error = [f"{obs.findtext('{http://ar.gov.afip.dif.FEV1/}Code')}: {obs.findtext('{http://ar.gov.afip.dif.FEV1/}Msg')}" for obs in observaciones]
+                    mensajes_error = [f"{obs.findtext('ns:Code', namespaces=ns)}: {obs.findtext('ns:Msg', namespaces=ns)}" for obs in observaciones]
                     app.logger.error(f"Comprobante rechazado por AFIP: {mensajes_error}")
                     return jsonify({"error": "Error de AFIP: " + " | ".join(mensajes_error)}), 400
                 app.logger.error("Comprobante rechazado por AFIP sin mensaje específico")

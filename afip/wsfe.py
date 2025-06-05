@@ -123,41 +123,44 @@ def enviar_comprobante(token, sign, cuit, datos_cbte_dict):
         # Verificar si hay errores en el cuerpo de la respuesta
         xml_resp = etree.fromstring(r.text.encode())
         
+        # Definir el namespace
+        ns = {'ns': 'http://ar.gov.afip.dif.FEV1/'}
+        
         # Verificar si hay errores en la respuesta
-        errores = xml_resp.findall(".//Err")
+        errores = xml_resp.findall(".//ns:Err", namespaces=ns)
         if errores:
-            mensajes_error = [f"{err.findtext('Code')}: {err.findtext('Msg')}" for err in errores]
+            mensajes_error = [f"{err.findtext('ns:Code', namespaces=ns)}: {err.findtext('ns:Msg', namespaces=ns)}" for err in errores]
             raise Exception("Error de AFIP: " + " | ".join(mensajes_error))
         
-        # Verificar que la respuesta contiene los campos necesarios
-        cae = xml_resp.findtext(".//CAE")
-        cae_fch_vto = xml_resp.findtext(".//CAEFchVto")
+        # Verificar el resultado usando la ruta correcta con namespace
+        resultado = xml_resp.findtext(".//ns:FeCabResp/ns:Resultado", namespaces=ns)
+        print(f"Resultado encontrado: {resultado}")  # Debug log
         
-        # Verificar el resultado
-        resultado = xml_resp.findtext(".//Resultado")
         if resultado == "A":  # A = Aprobado
+            # Extraer la información exitosa usando las rutas correctas con namespace
+            cae = xml_resp.findtext(".//ns:FECAEDetResponse/ns:CAE", namespaces=ns)
+            cae_fch_vto = xml_resp.findtext(".//ns:FECAEDetResponse/ns:CAEFchVto", namespaces=ns)
+            
             if not all([cae, cae_fch_vto]):
                 raise Exception("Error de AFIP: La respuesta no contiene CAE o fecha de vencimiento")
             
-            # Si está aprobado, usar el CbteDesde que enviamos
-            cbte_nro = datos_cbte_dict['cbte_desde']
-            
             # Verificar si hay observaciones (advertencias)
-            observaciones = xml_resp.findall(".//Obs")
+            observaciones = xml_resp.findall(".//ns:FECAEDetResponse/ns:Observaciones/ns:Obs", namespaces=ns)
             if observaciones:
-                mensajes_obs = [f"{obs.findtext('Code')}: {obs.findtext('Msg')}" for obs in observaciones]
+                mensajes_obs = [f"{obs.findtext('ns:Code', namespaces=ns)}: {obs.findtext('ns:Msg', namespaces=ns)}" for obs in observaciones]
                 print("Observaciones de AFIP:", mensajes_obs)  # Log de observaciones
             
             return r.text
         elif resultado == "R":  # R = Rechazado
             # Buscar observaciones de AFIP
-            observaciones = xml_resp.findall(".//Obs")
+            observaciones = xml_resp.findall(".//ns:FECAEDetResponse/ns:Observaciones/ns:Obs", namespaces=ns)
             if observaciones:
-                mensajes_error = [f"{obs.findtext('Code')}: {obs.findtext('Msg')}" for obs in observaciones]
+                mensajes_error = [f"{obs.findtext('ns:Code', namespaces=ns)}: {obs.findtext('ns:Msg', namespaces=ns)}" for obs in observaciones]
                 raise Exception("Error de AFIP: " + " | ".join(mensajes_error))
             else:
                 raise Exception("Error de AFIP: El comprobante fue rechazado sin mensaje de error específico")
         else:
+            print(f"XML completo recibido: {r.text}")  # Debug log
             raise Exception(f"Error de AFIP: Resultado inesperado '{resultado}'")
         
     except requests.exceptions.RequestException as e:
