@@ -21,10 +21,14 @@ fiscalizador-api/
 │   ├── routes/          # Endpoints de la API
 │   ├── services/        # Lógica de negocio
 │   └── models/          # Modelos de datos
-├── ARCA/
-│   ├── wsaa.py         # Autenticación ARCA
+├── afip/
+│   ├── wsaa.py         # Autenticación AFIP (WSAA)
 │   ├── wsfe.py         # Servicio de Facturación Electrónica
-│   └── config.py       # Configuración ARCA
+│   └── wsfe_consulta.py # Consultas al servicio WSFE
+├── tokens/             # Directorio para archivos de autenticación
+│   ├── ta.xml         # Ticket de Acceso
+│   ├── tra.xml        # Ticket de Requerimiento de Acceso
+│   └── tra.cms        # TRA firmado
 └── tests/              # Pruebas unitarias y de integración
 ```
 
@@ -36,17 +40,19 @@ sequenceDiagram
     participant API
     participant WSAA
     participant WSFE
-    participant ARCA
+    participant AFIP
 
     Cliente->>API: POST /fiscalizar
     API->>API: Validar datos
     API->>WSAA: Verificar TA
-    WSAA->>ARCA: Obtener TA (si expirado)
-    ARCA-->>WSAA: Token y Sign
+    Note over WSAA: Verifica token en tokens/ta.xml
+    WSAA->>AFIP: Obtener TA (si expirado o no existe)
+    Note over WSAA: Genera TRA único y lo firma
+    AFIP-->>WSAA: Token y Sign
     WSAA-->>API: TA válido
     API->>WSFE: Enviar comprobante
-    WSFE->>ARCA: FECAESolicitar
-    ARCA-->>WSFE: CAE y datos
+    WSFE->>AFIP: FECAESolicitar
+    AFIP-->>WSFE: CAE y datos
     WSFE-->>API: Respuesta
     API-->>Cliente: Resultado
 ```
@@ -55,52 +61,55 @@ sequenceDiagram
 
 ### Backend
 - **Python 3.8+**: Lenguaje principal
-- **FastAPI**: Framework web
-- **Zeep**: Cliente SOAP para servicios ARCA
-- **PyOpenSSL**: Manejo de certificados
-- **Pydantic**: Validación de datos
-- **SQLAlchemy**: ORM (opcional, para persistencia)
+- **Flask 3.0.2**: Framework web
+- **Flask-CORS**: Manejo de CORS
+- **Flask-Limiter**: Rate limiting
+- **Zeep**: Cliente SOAP para servicios AFIP
+- **OpenSSL**: Manejo de certificados y firmas
+- **lxml**: Procesamiento XML
+- **logging**: Sistema de logs integrado
 
-### Frontend (Recomendado)
-- **React/Vue/Angular**: Framework frontend
-- **Axios**: Cliente HTTP
-- **Material-UI/Ant Design**: Componentes UI
-- **React Query/SWR**: Manejo de estado y caché
+### Frontend
+- **HTML/JavaScript**: Interfaz de usuario
+- **Bootstrap**: Estilos y componentes
+- **Fetch API**: Comunicación con backend
 
 ### Herramientas de Desarrollo
-- **Docker**: Contenedorización
-- **Poetry**: Gestión de dependencias
-- **Pytest**: Testing
-- **Black**: Formateo de código
-- **Flake8**: Linting
+- **Git**: Control de versiones
+- **logging**: Sistema de logs para debugging
+- **OpenSSL**: Herramientas de línea de comandos
 
 ## Flujo de Trabajo
 
 ### 1. Autenticación
 ```python
-# El sistema maneja automáticamente:
+# El sistema maneja automáticamente la autenticación:
+# 1. Verifica si existe un TA válido en tokens/ta.xml
+# 2. Si no existe o está expirado, genera uno nuevo
+# 3. Guarda el nuevo TA en tokens/ta.xml
+
+# Ejemplo de uso:
+from afip.wsaa import obtener_ta, extraer_token_sign
+
+# Obtener TA (maneja automáticamente la caché y renovación)
 ta_xml = obtener_ta(CERT, KEY, servicio='wsfe')
+
+# Extraer token y firma para usar en servicios
 token, sign = extraer_token_sign(ta_xml)
 ```
 
-### 2. Validación de Datos
-```python
-# Ejemplo de validación de CUIT
-def validar_cuit_receptor(token, sign, cuit):
-    client = Client(SERVICIOS['ws_sr_padron_a5'])
-    response = client.service.getPersona(
-        token=token,
-        sign=sign,
-        cuitRepresentada=CUIT,
-        idPersona=cuit
-    )
-```
+### 2. Manejo de Tokens
+- Los tokens se almacenan en el directorio `tokens/`
+- El sistema verifica automáticamente la validez del token
+- Se regenera automáticamente si está expirado o próximo a expirar
+- Maneja reintentos en caso de errores de AFIP
+- Limpia archivos temporales después de cada operación
 
 ### 3. Fiscalización
 ```python
 # Ejemplo de envío de comprobante
 def enviar_comprobante(token, sign, cuit, datos_cbte_xml):
-    client = Client('https://wswhomo.ARCA.gov.ar/wsfev1/service.asmx?WSDL')
+    client = Client(SERVICIOS['wsfe'])
     response = client.service.FECAESolicitar(
         Auth={'Token': token, 'Sign': sign, 'Cuit': cuit},
         FeCAEReq=datos_cbte_xml
@@ -116,266 +125,128 @@ def enviar_comprobante(token, sign, cuit, datos_cbte_xml):
 |-----------|------|-------------|---------|
 | tipo_comprobante | int | Tipo de comprobante | 1 (Factura A) |
 | punto_venta | int | Punto de venta | 12 |
-| doc_tipo | int | Tipo de documento | 80 (CUIT) |
-| doc_nro | string | Número de documento | "20396127823" |
+| doc_tipo | int | Tipo de documento | 96 (DNI) |
+| doc_nro | string | Número de documento | "39612775" |
 | cbte_fch | string | Fecha (YYYYMMDD) | "20240315" |
 | imp_neto | float | Importe neto | 1000.00 |
 | imp_iva | float | Importe IVA | 210.00 |
 | imp_total | float | Importe total | 1210.00 |
 | mon_id | string | Moneda | "PES" |
 | concepto | int | Concepto | 1 (Productos) |
-| condicion_iva_receptor | int | Condición IVA | 1 (Responsable Inscripto) |
 
 #### Respuesta Exitosa
 ```json
 {
-    "CAE": "12345678901234",
-    "CAEFchVto": "20240415",
-    "CbteNro": 1,
+    "CAE": "75233247119284",
+    "CAEFchVto": "20250615",
+    "CbteNro": 27,
     "PtoVta": 12,
-    "CbteTipo": 1
+    "CbteTipo": 1,
+    "resultado": "A"
 }
 ```
 
 #### Respuesta de Error
 ```json
 {
-    "error": "Error ARCA 10015: El comprobante ya existe"
-}
-```
-
-### GET /ultimo-comprobante
-
-#### Parámetros Query
-| Parámetro | Tipo | Default | Descripción |
-|-----------|------|---------|-------------|
-| pto_vta | int | 12 | Punto de venta |
-| cbte_tipo | int | 1 | Tipo de comprobante |
-
-#### Respuesta
-```json
-{
-    "ultimo_comprobante": {
-        "punto_venta": 12,
-        "tipo_comprobante": 1,
-        "ultimo_numero": 123,
-        "fecha_ultimo": "2024-03-15T10:30:00"
-    },
-    "siguiente_numero": 124
+    "error": "Error al obtener token AFIP: [descripción del error]"
 }
 ```
 
 ## Validaciones
 
 ### 1. Validaciones de Datos
-- Formato de CUIT/DNI
+- Formato de DNI/CUIT
 - Fechas válidas
 - Importes positivos
 - Suma de alícuotas
-- Condición IVA válida
-
-### 2. Validaciones ARCA
-- CUIT activo en padrón
-- Punto de venta habilitado
 - Tipo de comprobante permitido
+
+### 2. Validaciones AFIP
+- Punto de venta habilitado
 - Numeración correcta
 - Fechas dentro de rangos permitidos
+- Token válido y no expirado
 
 ## Integración Frontend-Backend
 
-### Ejemplo de Componente React
+### Ejemplo de Componente HTML/JavaScript
 
-```jsx
-import React, { useState } from 'react';
-import axios from 'axios';
+```html
+<form id="fiscalizadorForm">
+    <!-- Campos del formulario -->
+    <div id="resultado"></div>
+</form>
 
-function Fiscalizador() {
-    const [datos, setDatos] = useState({
-        tipo_comprobante: 1,
-        punto_venta: 12,
-        // ... otros campos
-    });
-
-    const fiscalizar = async () => {
-        try {
-            const response = await axios.post('/fiscalizar', datos);
-            if (response.data.CAE) {
-                // Mostrar CAE y datos
-                mostrarExito(response.data);
-            }
-        } catch (error) {
-            // Mostrar error
-            mostrarError(error.response.data.error);
+<script>
+async function fiscalizar(datos) {
+    try {
+        const response = await fetch('/fiscalizar', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(datos)
+        });
+        
+        const resultado = await response.json();
+        
+        if (resultado.CAE) {
+            mostrarExito(resultado);
+        } else {
+            mostrarError(resultado.error);
         }
-    };
-
-    return (
-        <form onSubmit={fiscalizar}>
-            {/* Campos del formulario */}
-        </form>
-    );
-}
-```
-
-### Manejo de Errores
-
-```javascript
-// Frontend
-const manejarError = (error) => {
-    if (error.response) {
-        switch (error.response.status) {
-            case 400:
-                // Error de validación
-                mostrarErroresValidacion(error.response.data);
-                break;
-            case 401:
-                // Error de autenticación
-                regenerarTA();
-                break;
-            case 500:
-                // Error del servidor
-                mostrarErrorServidor();
-                break;
-        }
+    } catch (error) {
+        mostrarError('Error de comunicación con el servidor');
     }
-};
-```
-
-## Ejemplos de Uso
-
-### 1. Fiscalización Básica
-
-```python
-import requests
-
-# Datos mínimos requeridos
-datos = {
-    "tipo_comprobante": 1,
-    "punto_venta": 12,
-    "doc_tipo": 80,
-    "doc_nro": "20396127823",
-    "cbte_fch": "20240315",
-    "imp_neto": 1000.00,
-    "imp_iva": 210.00,
-    "imp_total": 1210.00,
-    "mon_id": "PES",
-    "concepto": 1,
-    "condicion_iva_receptor": 1
 }
-
-response = requests.post('http://api/fiscalizar', json=datos)
+</script>
 ```
-
-### 2. Fiscalización con Alícuotas
-
-```python
-# Datos con alícuotas
-datos = {
-    # ... datos básicos ...
-    "alicuotas": [
-        {
-            "Id": 5,  # 21%
-            "BaseImp": 1000.00,
-            "Importe": 210.00
-        },
-        {
-            "Id": 4,  # 10.5%
-            "BaseImp": 500.00,
-            "Importe": 52.50
-        }
-    ]
-}
-```
-
-### 3. Fiscalización con Tributos
-
-```python
-# Datos con tributos
-datos = {
-    # ... datos básicos ...
-    "tributos": [
-        {
-            "Id": 99,
-            "Desc": "Impuesto Municipal",
-            "BaseImp": 1000.00,
-            "Alic": 3.00,
-            "Importe": 30.00
-        }
-    ]
-}
-```
-
-## Guías de Implementación
-
-### 1. Configuración Inicial
-
-1. Obtener certificados ARCA
-2. Configurar variables de entorno
-3. Instalar dependencias
-4. Probar en ambiente de homologación
-
-### 2. Migración a Producción
-
-1. Obtener certificados de producción
-2. Actualizar URLs a producción
-3. Verificar CUIT y punto de venta
-4. Realizar pruebas de carga
-
-### 3. Monitoreo
-
-1. Implementar logging
-2. Configurar alertas
-3. Monitorear uso de TA
-4. Seguimiento de errores
 
 ## Solución de Problemas
 
 ### Errores Comunes
 
 1. **Error de Token**
-   - Verificar certificados
-   - Regenerar TA
-   - Revisar fechas
+   - Verificar que exista el directorio `tokens/`
+   - Comprobar permisos de escritura en `tokens/`
+   - Verificar certificados en `cert/`
+   - Revisar logs para mensajes específicos
 
 2. **Error de Validación**
    - Revisar formato de datos
    - Verificar rangos permitidos
-   - Comprobar CUIT activo
+   - Comprobar tipo de documento
 
 3. **Error de Comunicación**
-   - Verificar conectividad
+   - Verificar conectividad con AFIP
    - Revisar timeouts
-   - Comprobar URLs
+   - Comprobar URLs de servicios
 
 ### Logs y Debugging
 
 ```python
-# Ejemplo de logging
+# El sistema usa logging configurado en app.py
 import logging
 
-logging.basicConfig(
-    level=logging.DEBUG,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    filename='fiscalizador.log'
-)
-
-logger = logging.getLogger('fiscalizador')
-logger.debug('Enviando comprobante: %s', datos)
+logger = logging.getLogger(__name__)
+logger.info('Iniciando fiscalización')
+logger.error('Error al obtener token: %s', str(error))
 ```
 
 ### Herramientas de Diagnóstico
 
-1. **Logs de ARCA**
-   - Revisar respuestas XML
-   - Analizar códigos de error
+1. **Logs del Sistema**
+   - Revisar `logs/fiscalizador.log`
+   - Analizar respuestas XML
    - Verificar trazas SOAP
 
-2. **Monitoreo de Sistema**
-   - Uso de CPU/Memoria
-   - Tiempos de respuesta
-   - Errores HTTP
+2. **Archivos de Autenticación**
+   - `tokens/ta.xml`: Ticket de Acceso
+   - `tokens/tra.xml`: Ticket de Requerimiento
+   - `tokens/tra.cms`: TRA firmado
 
 3. **Pruebas de Integración**
    - Validar flujos completos
    - Probar casos límite
-   - Verificar reconexiones 
+   - Verificar manejo de errores 

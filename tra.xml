@@ -1,8 +1,0 @@
-<loginTicketRequest>
-  <header>
-    <uniqueId>2506021244</uniqueId>  <!-- Formato de fecha y hora en el identificador único. -->
-    <generationTime>2025-06-02T12:34:36.362095</generationTime>  <!-- Fecha de generación (10 minutos antes). -->
-    <expirationTime>2025-06-02T12:54:36.362095</expirationTime>  <!-- Fecha de expiración (10 minutos después). -->
-  </header>
-  <service>wsfe</service>  <!-- Nombre del servicio solicitado (wsfe). -->
-</loginTicketRequest>
