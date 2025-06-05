@@ -18,6 +18,14 @@
     <div class="container py-5">
         <h1 class="mb-4">Fiscalizador AFIP</h1>
         
+        <!-- Botón para regenerar TA -->
+        <div class="mb-4">
+            <button type="button" class="btn btn-warning" id="regenerarTA">
+                Regenerar Ticket de Acceso (TA)
+            </button>
+            <div id="taStatus" class="mt-2 small"></div>
+        </div>
+        
         <!-- Formulario de comprobante -->
         <div class="card shadow-sm">
             <div class="card-body">
@@ -232,6 +240,39 @@
     </div>
 
     <script>
+        // Función para regenerar TA
+        document.getElementById('regenerarTA').addEventListener('click', async () => {
+            const taStatus = document.getElementById('taStatus');
+            const button = document.getElementById('regenerarTA');
+            
+            try {
+                button.disabled = true;
+                button.innerHTML = 'Regenerando TA...';
+                taStatus.innerHTML = 'Procesando...';
+                taStatus.className = 'mt-2 small text-info';
+                
+                const response = await fetch('/regenerar-ta', {
+                    method: 'POST'
+                });
+                
+                const resultado = await response.json();
+                
+                if (response.ok) {
+                    taStatus.innerHTML = `TA regenerado exitosamente. Token: ${resultado.token}`;
+                    taStatus.className = 'mt-2 small text-success';
+                } else {
+                    taStatus.innerHTML = `Error: ${resultado.error}`;
+                    taStatus.className = 'mt-2 small text-danger';
+                }
+            } catch (error) {
+                taStatus.innerHTML = `Error: ${error.message}`;
+                taStatus.className = 'mt-2 small text-danger';
+            } finally {
+                button.disabled = false;
+                button.innerHTML = 'Regenerar Ticket de Acceso (TA)';
+            }
+        });
+
         // Función para agregar alícuota
         document.getElementById('addAlicuota').addEventListener('click', () => {
             const container = document.getElementById('alicuotasContainer');

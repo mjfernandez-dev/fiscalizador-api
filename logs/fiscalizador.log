@@ -1,0 +1,8 @@
+2025-06-05 10:12:57,280 INFO: Fiscalizador startup [in /home/matias/Documentos/cormons/fiscalizador-api/app.py:37]
+2025-06-05 10:13:16,963 INFO: Último número autorizado: 22, Siguiente número a usar: 23 [in /home/matias/Documentos/cormons/fiscalizador-api/app.py:118]
+2025-06-05 10:13:16,963 INFO: Enviando comprobante a AFIP... [in /home/matias/Documentos/cormons/fiscalizador-api/app.py:141]
+2025-06-05 10:13:17,327 ERROR: Error de AFIP: Error de AFIP: Resultado inesperado 'None' [in /home/matias/Documentos/cormons/fiscalizador-api/app.py:149]
+2025-06-05 10:15:13,738 INFO: Fiscalizador startup [in /home/matias/Documentos/cormons/fiscalizador-api/app.py:37]
+2025-06-05 10:15:27,880 INFO: Último número autorizado: 23, Siguiente número a usar: 24 [in /home/matias/Documentos/cormons/fiscalizador-api/app.py:118]
+2025-06-05 10:15:27,880 INFO: Enviando comprobante a AFIP... [in /home/matias/Documentos/cormons/fiscalizador-api/app.py:141]
+2025-06-05 10:15:28,064 ERROR: Error de AFIP: Error de AFIP: Resultado inesperado 'None' [in /home/matias/Documentos/cormons/fiscalizador-api/app.py:149]

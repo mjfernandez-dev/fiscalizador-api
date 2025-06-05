@@ -1,7 +1,19 @@
 import requests
+import time
+from lxml import etree
 
 def construir_soap(token, sign, cuit, datos_cbte_xml):
-    return f"""<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"
+    # Determinar si debemos incluir IVA y Tributos
+    tipo_comprobante = int(datos_cbte_xml['tipo_comprobante'])
+    imp_trib = float(datos_cbte_xml.get('imp_trib', '0.00'))
+    
+    # No incluir IVA para comprobantes tipo C (11)
+    incluir_iva = tipo_comprobante != 11
+    # No incluir tributos si el importe es 0
+    incluir_tributos = imp_trib > 0
+    
+    # Construir el XML base
+    xml_base = f"""<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"
                       xmlns:ar="http://ar.gov.afip.dif.FEV1/">
    <soapenv:Header/>
    <soapenv:Body>
@@ -11,91 +23,144 @@ def construir_soap(token, sign, cuit, datos_cbte_xml):
             <ar:Sign>{sign}</ar:Sign>
             <ar:Cuit>{cuit}</ar:Cuit>
          </ar:Auth>
-         {datos_cbte_xml}
+         <ar:FeCAEReq>
+            <ar:FeCabReq>
+               <ar:CantReg>1</ar:CantReg>
+               <ar:PtoVta>{datos_cbte_xml['punto_venta']}</ar:PtoVta>
+               <ar:CbteTipo>{datos_cbte_xml['tipo_comprobante']}</ar:CbteTipo>
+            </ar:FeCabReq>
+            <ar:FeDetReq>
+               <ar:FECAEDetRequest>
+                  <ar:Concepto>{datos_cbte_xml['concepto']}</ar:Concepto>
+                  <ar:DocTipo>{datos_cbte_xml['doc_tipo']}</ar:DocTipo>
+                  <ar:DocNro>{datos_cbte_xml['doc_nro']}</ar:DocNro>
+                  <ar:CbteDesde>{datos_cbte_xml['cbte_desde']}</ar:CbteDesde>
+                  <ar:CbteHasta>{datos_cbte_xml['cbte_hasta']}</ar:CbteHasta>
+                  <ar:CbteFch>{datos_cbte_xml['cbte_fch']}</ar:CbteFch>
+                  <ar:ImpTotal>{datos_cbte_xml['imp_total']}</ar:ImpTotal>
+                  <ar:ImpNeto>{datos_cbte_xml['imp_neto']}</ar:ImpNeto>
+                  <ar:ImpOpEx>{datos_cbte_xml.get('imp_op_ex', '0.00')}</ar:ImpOpEx>
+                  <ar:ImpTrib>{datos_cbte_xml.get('imp_trib', '0.00')}</ar:ImpTrib>
+                  <ar:ImpIVA>{datos_cbte_xml.get('imp_iva', '0.00')}</ar:ImpIVA>
+                  <ar:FchServDesde>{datos_cbte_xml.get('fch_serv_desde', '')}</ar:FchServDesde>
+                  <ar:FchServHasta>{datos_cbte_xml.get('fch_serv_hasta', '')}</ar:FchServHasta>
+                  <ar:FchVtoPago>{datos_cbte_xml.get('fch_vto_pago', '')}</ar:FchVtoPago>
+                  <ar:MonId>{datos_cbte_xml['mon_id']}</ar:MonId>
+                  <ar:MonCotiz>{datos_cbte_xml.get('mon_cotiz', '1.000')}</ar:MonCotiz>"""
+    
+    # Agregar IVA solo si es necesario
+    if incluir_iva and datos_cbte_xml.get('alicuotas'):
+        xml_base += f"""
+                  <ar:Iva>
+                    {"".join([
+                      f"<ar:AlicIva>"
+                      f"<ar:Id>{iva['Id']}</ar:Id>"
+                      f"<ar:BaseImp>{iva['BaseImp']}</ar:BaseImp>"
+                      f"<ar:Importe>{iva['Importe']}</ar:Importe>"
+                      f"</ar:AlicIva>"
+                      for iva in datos_cbte_xml['alicuotas']
+                    ])}
+                  </ar:Iva>"""
+    
+    # Agregar Tributos solo si es necesario
+    if incluir_tributos and datos_cbte_xml.get('tributos'):
+        xml_base += f"""
+                  <ar:Tributos>
+                    {"".join([
+                      f"<ar:Tributo>"
+                      f"<ar:Id>{trib['Id']}</ar:Id>"
+                      f"<ar:Desc>{trib['Desc']}</ar:Desc>"
+                      f"<ar:BaseImp>{trib['BaseImp']}</ar:BaseImp>"
+                      f"<ar:Alic>{trib['Alic']}</ar:Alic>"
+                      f"<ar:Importe>{trib['Importe']}</ar:Importe>"
+                      f"</ar:Tributo>"
+                      for trib in datos_cbte_xml['tributos']
+                    ])}
+                  </ar:Tributos>"""
+    
+    # Cerrar el XML
+    xml_base += """
+               </ar:FECAEDetRequest>
+            </ar:FeDetReq>
+         </ar:FeCAEReq>
       </ar:FECAESolicitar>
    </soapenv:Body>
 </soapenv:Envelope>"""
+    
+    return xml_base
 
-def enviar_comprobante(token, sign, cuit, datos_cbte_xml):
-    body = construir_soap(token, sign, cuit, datos_cbte_xml)
+def enviar_comprobante(token, sign, cuit, datos_cbte_dict):
+    body = construir_soap(token, sign, cuit, datos_cbte_dict)
     headers = {
         'SOAPAction': 'http://ar.gov.afip.dif.FEV1/FECAESolicitar',
         'Content-Type': 'text/xml; charset=utf-8',
     }
-    r = requests.post("https://wswhomo.afip.gov.ar/wsfev1/service.asmx", headers=headers, data=body)
-    return r.text
-
-def construir_xml_comprobante(datos):
-    """Construye el XML del comprobante según la estructura requerida por AFIP."""
-    # Validar campos requeridos
-    campos_requeridos = ['tipo_comprobante', 'punto_venta', 'doc_tipo', 'doc_nro', 
-                        'cbte_fch', 'imp_neto', 'imp_iva', 'imp_total', 'mon_id', 
-                        'concepto', 'condicion_iva_receptor']
     
-    for campo in campos_requeridos:
-        if campo not in datos:
-            raise ValueError(f"Falta el campo requerido: {campo}")
-
-    # Validar tipo de documento
-    doc_tipo = int(datos['doc_tipo'])
-    doc_nro = str(datos['doc_nro'])
+    # Configuración de timeout
+    timeout = (30, 30)  # (connect timeout, read timeout)
     
-    if doc_tipo == 80 and len(doc_nro) != 11:  # CUIT
-        raise ValueError("El CUIT debe tener 11 dígitos")
-    elif doc_tipo == 96 and len(doc_nro) != 8:  # DNI
-        raise ValueError("El DNI debe tener 8 dígitos")
-    elif doc_tipo == 99 and doc_nro != "0":  # Consumidor Final
-        raise ValueError("Para Consumidor Final, el número de documento debe ser 0")
-
-    # Construir XML
-    xml = f"""<?xml version="1.0" encoding="UTF-8" ?>
-<FeDetReq>
-    <Concepto>{datos['concepto']}</Concepto>
-    <DocTipo>{doc_tipo}</DocTipo>
-    <DocNro>{doc_nro}</DocNro>
-    <CbteDesde>{datos['cbte_desde']}</CbteDesde>
-    <CbteHasta>{datos['cbte_hasta']}</CbteHasta>
-    <CbteFch>{datos['cbte_fch']}</CbteFch>
-    <ImpTotal>{datos['imp_total']}</ImpTotal>
-    <ImpNeto>{datos['imp_neto']}</ImpNeto>
-    <ImpOpEx>{datos.get('imp_op_ex', '0.00')}</ImpOpEx>
-    <ImpTrib>{datos.get('imp_trib', '0.00')}</ImpTrib>
-    <ImpIVA>{datos['imp_iva']}</ImpIVA>
-    <FchServicio>{datos.get('fch_serv_desde', '')}</FchServicio>
-    <FchVtoPago>{datos.get('fch_serv_hasta', '')}</FchVtoPago>
-    <MonId>{datos['mon_id']}</MonId>
-    <MonCotiz>{datos.get('mon_cotiz', '1.000')}</MonCotiz>
-    <CbtesAsoc>
-        <CbteAsoc>
-            <Tipo>{datos.get('tipo_comprobante')}</Tipo>
-            <PtoVta>{datos.get('punto_venta')}</PtoVta>
-            <Nro>{datos.get('cbte_desde')}</Nro>
-        </CbteAsoc>
-    </CbtesAsoc>
-    <Tributos>
-        {''.join(f'''
-        <Tributo>
-            <Id>{tributo['Id']}</Id>
-            <Desc>{tributo['Desc']}</Desc>
-            <BaseImp>{tributo['BaseImp']}</BaseImp>
-            <Alic>{tributo['Alic']}</Alic>
-            <Importe>{tributo['Importe']}</Importe>
-        </Tributo>''' for tributo in datos.get('tributos', []))}
-    </Tributos>
-    <Iva>
-        {''.join(f'''
-        <AlicIva>
-            <Id>{alicuota['Id']}</Id>
-            <BaseImp>{alicuota['BaseImp']}</BaseImp>
-            <Importe>{alicuota['Importe']}</Importe>
-        </AlicIva>''' for alicuota in datos.get('alicuotas', []))}
-    </Iva>
-    <Opcionales>
-        <Opcional>
-            <Id>1</Id>
-            <Valor>{datos.get('condicion_iva_receptor')}</Valor>
-        </Opcional>
-    </Opcionales>
-</FeDetReq>"""
-
-    return xml
+    try:
+        print("Enviando request a AFIP...")
+        print("Body:", body)  # Log del XML enviado
+        
+        r = requests.post(
+            "https://wswhomo.afip.gov.ar/wsfev1/service.asmx",
+            headers=headers,
+            data=body,
+            timeout=timeout,
+            verify=True  # Verificar certificado SSL
+        )
+        
+        print("Status code:", r.status_code)  # Log del código de estado
+        print("Response headers:", r.headers)  # Log de los headers
+        
+        # Solo lanzar excepción si no es 200 OK
+        if r.status_code != 200:
+            r.raise_for_status()
+        
+        print("Response body:", r.text)  # Log del cuerpo de la respuesta
+            
+        # Verificar si hay errores en el cuerpo de la respuesta
+        xml_resp = etree.fromstring(r.text.encode())
+        
+        # Verificar si hay errores en la respuesta
+        errores = xml_resp.findall(".//Err")
+        if errores:
+            mensajes_error = [f"{err.findtext('Code')}: {err.findtext('Msg')}" for err in errores]
+            raise Exception("Error de AFIP: " + " | ".join(mensajes_error))
+        
+        # Verificar que la respuesta contiene los campos necesarios
+        cae = xml_resp.findtext(".//CAE")
+        cae_fch_vto = xml_resp.findtext(".//CAEFchVto")
+        
+        # Verificar el resultado
+        resultado = xml_resp.findtext(".//Resultado")
+        if resultado == "A":  # A = Aprobado
+            if not all([cae, cae_fch_vto]):
+                raise Exception("Error de AFIP: La respuesta no contiene CAE o fecha de vencimiento")
+            
+            # Si está aprobado, usar el CbteDesde que enviamos
+            cbte_nro = datos_cbte_dict['cbte_desde']
+            
+            # Verificar si hay observaciones (advertencias)
+            observaciones = xml_resp.findall(".//Obs")
+            if observaciones:
+                mensajes_obs = [f"{obs.findtext('Code')}: {obs.findtext('Msg')}" for obs in observaciones]
+                print("Observaciones de AFIP:", mensajes_obs)  # Log de observaciones
+            
+            return r.text
+        elif resultado == "R":  # R = Rechazado
+            # Buscar observaciones de AFIP
+            observaciones = xml_resp.findall(".//Obs")
+            if observaciones:
+                mensajes_error = [f"{obs.findtext('Code')}: {obs.findtext('Msg')}" for obs in observaciones]
+                raise Exception("Error de AFIP: " + " | ".join(mensajes_error))
+            else:
+                raise Exception("Error de AFIP: El comprobante fue rechazado sin mensaje de error específico")
+        else:
+            raise Exception(f"Error de AFIP: Resultado inesperado '{resultado}'")
+        
+    except requests.exceptions.RequestException as e:
+        raise Exception(f"Error al conectar con AFIP: {str(e)}")
+    except Exception as e:
+        raise e

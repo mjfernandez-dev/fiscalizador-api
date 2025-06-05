@@ -1,0 +1,110 @@
+<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"
+                  xmlns:ar="http://ar.gov.afip.dif.FEV1/">
+  <soapenv:Header/>
+  <soapenv:Body>
+    <ar:FECAESolicitar>
+      <ar:Auth>
+        <ar:Token>PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiIHN0YW5kYWxvbmU9InllcyI/Pgo8c3NvIHZlcnNpb249IjIuMCI+CiAgICA8aWQgc3JjPSJDTj13c2FhaG9tbywgTz1BRklQLCBDPUFSLCBTRVJJQUxOVU1CRVI9Q1VJVCAzMzY5MzQ1MDIzOSIgZHN0PSJDTj13c2ZlLCBPPUFGSVAsIEM9QVIiIHVuaXF1ZV9pZD0iMzI4MTg4NDY0OSIgZ2VuX3RpbWU9IjE3NDkwNzYxMTgiIGV4cF90aW1lPSIxNzQ5MTE5Mzc4Ii8+CiAgICA8b3BlcmF0aW9uIHR5cGU9ImxvZ2luIiB2YWx1ZT0iZ3JhbnRlZCI+CiAgICAgICAgPGxvZ2luIGVudGl0eT0iMzM2OTM0NTAyMzkiIHNlcnZpY2U9IndzZmUiIHVpZD0iU0VSSUFMTlVNQkVSPUNVSVQgMjAzOTYxMjc4MjMsIENOPXBydWViYSIgYXV0aG1ldGhvZD0iY21zIiByZWdtZXRob2Q9IjIyIj4KICAgICAgICAgICAgPHJlbGF0aW9ucz4KICAgICAgICAgICAgICAgIDxyZWxhdGlvbiBrZXk9IjIwMzk2MTI3ODIzIiByZWx0eXBlPSI0Ii8+CiAgICAgICAgICAgIDwvcmVsYXRpb25zPgogICAgICAgIDwvbG9naW4+CiAgICA8L29wZXJhdGlvbj4KPC9zc28+Cg==</ar:Token>
+        <ar:Sign>TWIGS5Yi0x07BFKHGZpL4QAMx9XS8j1z9gJqVQKLYM4O3eVVhI0/hJocEhVnhw0Zy0NDE990L33HYpzEd4klOmjtF8vMVKiOlEbIS+akdpVn+Z0aOxek49F/+x1oPZdO4/tw9AbnAGadUlc7u/6LgBz5+flJ8+qwFSjphTGnjAQ=</ar:Sign>
+        <ar:Cuit>20396127823</ar:Cuit>
+      </ar:Auth>
+      <ar:FeCAEReq>
+        <ar:FeCabReq>
+          <ar:CantReg>1</ar:CantReg>
+          <ar:PtoVta>12</ar:PtoVta>
+          <ar:CbteTipo>1</ar:CbteTipo> <!-- FACTURA A -->
+        </ar:FeCabReq>
+        <ar:FeDetReq>
+          <ar:FECAEDetRequest>
+            <ar:Concepto>1</ar:Concepto> <!-- Productos -->
+            <ar:DocTipo>80</ar:DocTipo> <!-- CUIT -->
+            <ar:DocNro>20111111112</ar:DocNro>
+            <ar:CbteDesde>2</ar:CbteDesde>
+            <ar:CbteHasta>2</ar:CbteHasta>
+            <ar:CbteFch>20250603</ar:CbteFch>
+            <ar:ImpTotal>184.05</ar:ImpTotal>
+            <ar:ImpTotConc>0.00</ar:ImpTotConc>
+            <ar:ImpNeto>150.00</ar:ImpNeto>
+            <ar:ImpOpEx>0.00</ar:ImpOpEx>
+            <ar:ImpTrib>7.80</ar:ImpTrib>
+            <ar:ImpIVA>26.25</ar:ImpIVA>
+            <ar:FchServDesde></ar:FchServDesde>
+            <ar:FchServHasta></ar:FchServHasta>
+            <ar:FchVtoPago></ar:FchVtoPago>
+            <ar:MonId>PES</ar:MonId>
+            <ar:MonCotiz>1.000</ar:MonCotiz>
+            <ar:Tributos>
+              <ar:Tributo>
+                <ar:Id>99</ar:Id>
+                <ar:Desc>Impuesto Municipal Matanza</ar:Desc>
+                <ar:BaseImp>150.00</ar:BaseImp>
+                <ar:Alic>5.2</ar:Alic>
+                <ar:Importe>7.80</ar:Importe>
+              </ar:Tributo>
+            </ar:Tributos>
+            <ar:Iva>
+              <ar:AlicIva>
+                <ar:Id>5</ar:Id> <!-- 21% -->
+                <ar:BaseImp>100.00</ar:BaseImp>
+                <ar:Importe>21.00</ar:Importe>
+              </ar:AlicIva>
+              <ar:AlicIva>
+                <ar:Id>4</ar:Id> <!-- 10.5% -->
+                <ar:BaseImp>50.00</ar:BaseImp>
+                <ar:Importe>5.25</ar:Importe>
+              </ar:AlicIva>
+            </ar:Iva>
+          </ar:FECAEDetRequest>
+        </ar:FeDetReq>
+      </ar:FeCAEReq>
+    </ar:FECAESolicitar>
+  </soapenv:Body>
+</soapenv:Envelope>
+
+
+rta:
+
+<?xml version="1.0" encoding="utf-8"?>
+<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema">
+    <soap:Header>
+        <FEHeaderInfo xmlns="http://ar.gov.afip.dif.FEV1/">
+            <ambiente>HomologacionExterno - efa</ambiente>
+            <fecha>2025-06-05T00:08:51.7025417-03:00</fecha>
+            <id>6.0.1.0</id>
+        </FEHeaderInfo>
+    </soap:Header>
+    <soap:Body>
+        <FECAESolicitarResponse xmlns="http://ar.gov.afip.dif.FEV1/">
+            <FECAESolicitarResult>
+                <FeCabResp>
+                    <Cuit>20396127823</Cuit>
+                    <PtoVta>12</PtoVta>
+                    <CbteTipo>1</CbteTipo>
+                    <FchProceso>20250605000850</FchProceso>
+                    <CantReg>1</CantReg>
+                    <Resultado>R</Resultado>
+                    <Reproceso>N</Reproceso>
+                </FeCabResp>
+                <FeDetResp>
+                    <FECAEDetResponse>
+                        <Concepto>1</Concepto>
+                        <DocTipo>80</DocTipo>
+                        <DocNro>20111111112</DocNro>
+                        <CbteDesde>2</CbteDesde>
+                        <CbteHasta>2</CbteHasta>
+                        <CbteFch>20250603</CbteFch>
+                        <Resultado>R</Resultado>
+                        <CAE />
+                        <CAEFchVto />
+                    </FECAEDetResponse>
+                </FeDetResp>
+                <Errors>
+                    <Err>
+                        <Code>10016</Code>
+                        <Msg>El numero o fecha del comprobante no se corresponde con el proximo a autorizar. Consultar metodo FECompUltimoAutorizado.</Msg>
+                    </Err>
+                </Errors>
+            </FECAESolicitarResult>
+        </FECAESolicitarResponse>
+    </soap:Body>
+</soap:Envelope>
