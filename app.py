@@ -84,7 +84,12 @@ def verificar_ta():
 
 @app.route("/fiscalizar", methods=["POST"])
 def fiscalizar():
+    """
+    Endpoint principal para fiscalizar comprobantes
+    Recibe los datos del comprobante y lo envía a AFIP
+    """
     try:
+        # Obtener y validar datos de la solicitud
         datos = request.json
         if not datos:
             app.logger.error("No se recibieron datos en la solicitud")
@@ -96,7 +101,7 @@ def fiscalizar():
             app.logger.error(f"TA inválido: {mensaje_error}")
             return jsonify({"error": mensaje_error}), 400
 
-        # Obtener TA
+        # Obtener nuevo TA si es necesario
         try:
             ta_xml = obtener_ta(CERT, KEY)
             token, sign = extraer_token_sign(ta_xml)
@@ -104,12 +109,13 @@ def fiscalizar():
             app.logger.error(f"Error al obtener TA: {str(e)}")
             return jsonify({"error": f"Error al obtener el Ticket de Acceso: {str(e)}"}), 500
 
-        # Consultar último comprobante autorizado
+        # Consultar último comprobante autorizado para obtener el siguiente número
         try:
             pto_vta = int(datos.get('punto_venta', 12))
             cbte_tipo = int(datos.get('tipo_comprobante', 1))
             ultimo = consultar_ultimo_autorizado(token, sign, CUIT, pto_vta, cbte_tipo)
             
+            # Calcular siguiente número
             if ultimo['ultimo_numero'] is None:
                 siguiente_numero = 1
             else:
@@ -117,7 +123,7 @@ def fiscalizar():
                 
             app.logger.info(f"Último número autorizado: {ultimo['ultimo_numero']}, Siguiente número a usar: {siguiente_numero}")
             
-            # Si el número de comprobante ya está en los datos, verificar que sea el correcto
+            # Validar número de comprobante si fue proporcionado
             if 'cbte_desde' in datos:
                 cbte_desde = int(datos['cbte_desde'])
                 if cbte_desde != siguiente_numero:
@@ -128,7 +134,7 @@ def fiscalizar():
                         "siguiente_numero": siguiente_numero
                     }), 400
             
-            # Agregar el número de comprobante a los datos
+            # Asignar números de comprobante
             datos['cbte_desde'] = siguiente_numero
             datos['cbte_hasta'] = siguiente_numero
             
@@ -136,7 +142,7 @@ def fiscalizar():
             app.logger.error(f"Error al consultar último comprobante: {str(e)}")
             return jsonify({"error": f"Error al consultar último comprobante: {str(e)}"}), 500
 
-        # Enviar a AFIP
+        # Enviar comprobante a AFIP
         try:
             app.logger.info("Enviando comprobante a AFIP...")
             app.logger.debug(f"Datos del comprobante: {datos}")
@@ -144,6 +150,7 @@ def fiscalizar():
             app.logger.info("Respuesta recibida de AFIP")
             app.logger.debug(f"Respuesta AFIP: {respuesta_afip}")
         except Exception as e:
+            # Manejo específico de diferentes tipos de errores
             error_msg = str(e)
             if "Error de AFIP:" in error_msg:
                 app.logger.error(f"Error de AFIP: {error_msg}")
@@ -158,36 +165,38 @@ def fiscalizar():
                 app.logger.error(f"Error al enviar comprobante: {error_msg}")
                 return jsonify({"error": f"Error al enviar comprobante a AFIP: {error_msg}"}), 500
 
-        # Intentar parsear la respuesta
+        # Procesar respuesta de AFIP
         try:
             from lxml import etree
             xml_resp = etree.fromstring(respuesta_afip.encode())
             
-            # Definir el namespace
+            # Definir namespace para búsqueda en XML
             ns = {'ns': 'http://ar.gov.afip.dif.FEV1/'}
             
-            # Verificar el resultado usando la ruta correcta con namespace
+            # Verificar resultado de AFIP
             resultado = xml_resp.findtext(".//ns:FeCabResp/ns:Resultado", namespaces=ns)
             app.logger.info(f"Resultado de AFIP: {resultado}")
             
-            if resultado == "A":  # A = Aprobado
-                # Extraer la información exitosa usando las rutas correctas con namespace
+            if resultado == "A":  # Aprobado
+                # Extraer datos del comprobante aprobado
                 cae = xml_resp.findtext(".//ns:FECAEDetResponse/ns:CAE", namespaces=ns)
                 cae_fch_vto = xml_resp.findtext(".//ns:FECAEDetResponse/ns:CAEFchVto", namespaces=ns)
                 
                 app.logger.info(f"CAE: {cae}, Fecha vto: {cae_fch_vto}")
                 
+                # Validar datos requeridos
                 if not all([cae, cae_fch_vto]):
                     app.logger.error("Respuesta de AFIP sin CAE o fecha de vencimiento")
                     return jsonify({"error": "Error de AFIP: La respuesta no contiene CAE o fecha de vencimiento"}), 500
                 
-                # Verificar si hay observaciones (advertencias) dentro de FECAEDetResponse
+                # Procesar observaciones si existen
                 observaciones = xml_resp.findall(".//ns:FECAEDetResponse/ns:Observaciones/ns:Obs", namespaces=ns)
                 mensajes_obs = []
                 if observaciones:
                     mensajes_obs = [f"{obs.findtext('ns:Code', namespaces=ns)}: {obs.findtext('ns:Msg', namespaces=ns)}" for obs in observaciones]
                     app.logger.info(f"Observaciones de AFIP: {mensajes_obs}")
                 
+                # Construir respuesta exitosa
                 respuesta = {
                     "CAE": cae,
                     "CAEFchVto": cae_fch_vto,
@@ -197,10 +206,10 @@ def fiscalizar():
                     "observaciones": mensajes_obs if mensajes_obs else None
                 }
                 app.logger.info("Comprobante aprobado exitosamente")
-                return jsonify(respuesta), 200  # Éxito
+                return jsonify(respuesta), 200
                 
-            elif resultado == "R":  # R = Rechazado
-                # Buscar observaciones en FECAEDetResponse
+            elif resultado == "R":  # Rechazado
+                # Procesar mensajes de error
                 observaciones = xml_resp.findall(".//ns:FECAEDetResponse/ns:Observaciones/ns:Obs", namespaces=ns)
                 if observaciones:
                     mensajes_error = [f"{obs.findtext('ns:Code', namespaces=ns)}: {obs.findtext('ns:Msg', namespaces=ns)}" for obs in observaciones]
@@ -209,6 +218,7 @@ def fiscalizar():
                 app.logger.error("Comprobante rechazado por AFIP sin mensaje específico")
                 return jsonify({"error": "El comprobante fue rechazado por AFIP"}), 400
             else:
+                # Resultado inesperado
                 app.logger.error(f"Resultado inesperado de AFIP: {resultado}")
                 app.logger.debug(f"XML completo recibido: {respuesta_afip}")
                 return jsonify({"error": f"Resultado inesperado de AFIP: {resultado}"}), 500
@@ -223,20 +233,23 @@ def fiscalizar():
 
 @app.route("/")
 def interfaz_web():
+    """Endpoint para servir la interfaz web"""
     return send_from_directory(".", "interface.html")
 
 @app.route("/ultimo-comprobante", methods=["GET"])
 def ultimo_comprobante():
+    """
+    Endpoint para consultar el último comprobante autorizado
+    Retorna información sobre el último comprobante y el siguiente número a usar
+    """
     try:
         # Obtener parámetros de la consulta
         pto_vta = request.args.get('pto_vta', type=int, default=12)
         cbte_tipo = request.args.get('cbte_tipo', type=int, default=1)
         
-        # Obtener TA
+        # Obtener TA y consultar último comprobante
         ta_xml = obtener_ta(CERT, KEY)
         token, sign = extraer_token_sign(ta_xml)
-        
-        # Consultar último comprobante
         resultado = consultar_ultimo_autorizado(token, sign, CUIT, pto_vta, cbte_tipo)
         
         # Construir respuesta
@@ -258,7 +271,12 @@ def ultimo_comprobante():
 
 @app.route("/estado-ta", methods=["GET"])
 def estado_ta():
+    """
+    Endpoint para consultar el estado del Ticket de Acceso
+    Retorna información detallada sobre el TA actual
+    """
     try:
+        # Verificar estado del TA
         ta_valido, mensaje_error = verificar_ta()
         ta_info = {
             "valido": ta_valido,
@@ -272,11 +290,10 @@ def estado_ta():
         }
 
         if ta_info["existe"]:
-            # Leer el TA
+            # Leer y procesar información del TA
             with open("ta.xml") as f:
                 ta_xml = f.read()
             
-            # Parsear el XML
             root = ET.fromstring(ta_xml)
             
             # Extraer fechas
@@ -285,8 +302,8 @@ def estado_ta():
             
             if exp_time:
                 ta_info["fecha_expiracion"] = exp_time
+                # Calcular tiempo restante
                 exp_datetime = datetime.fromisoformat(exp_time.replace('Z', '+00:00'))
-                # Obtener la fecha actual con zona horaria
                 now = datetime.now(pytz.timezone('America/Argentina/Buenos_Aires'))
                 tiempo_restante = exp_datetime - now
                 ta_info["tiempo_restante"] = {
@@ -297,7 +314,7 @@ def estado_ta():
             if gen_time:
                 ta_info["fecha_creacion"] = gen_time
 
-            # Extraer token y sign
+            # Extraer token y sign (parcialmente ocultos por seguridad)
             token, sign = extraer_token_sign(ta_xml)
             ta_info["token"] = token[:10] + "..." if token else None
             ta_info["sign"] = sign[:10] + "..." if sign else None
@@ -313,8 +330,12 @@ def estado_ta():
 
 @app.route("/regenerar-ta", methods=["POST"])
 def regenerar_ta():
+    """
+    Endpoint para regenerar el Ticket de Acceso
+    Elimina el TA existente y genera uno nuevo
+    """
     try:
-        # Eliminar TA existente si existe
+        # Eliminar TA existente
         if os.path.exists("ta.xml"):
             os.remove("ta.xml")
         

@@ -3,7 +3,17 @@ import time
 from lxml import etree
 
 def construir_soap(token, sign, cuit, datos_cbte_xml):
-    # Determinar si debemos incluir IVA y Tributos
+    """
+    Construye el XML SOAP para enviar a AFIP
+    Args:
+        token: Token de autenticación
+        sign: Firma digital
+        cuit: CUIT del emisor
+        datos_cbte_xml: Diccionario con los datos del comprobante
+    Returns:
+        str: XML SOAP completo
+    """
+    # Determinar si debemos incluir IVA y Tributos según el tipo de comprobante
     tipo_comprobante = int(datos_cbte_xml['tipo_comprobante'])
     imp_trib = float(datos_cbte_xml.get('imp_trib', '0.00'))
     
@@ -12,7 +22,7 @@ def construir_soap(token, sign, cuit, datos_cbte_xml):
     # No incluir tributos si el importe es 0
     incluir_tributos = imp_trib > 0
     
-    # Construir el XML base
+    # Construir el XML base con los datos comunes
     xml_base = f"""<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"
                       xmlns:ar="http://ar.gov.afip.dif.FEV1/">
    <soapenv:Header/>
@@ -48,7 +58,7 @@ def construir_soap(token, sign, cuit, datos_cbte_xml):
                   <ar:MonId>{datos_cbte_xml['mon_id']}</ar:MonId>
                   <ar:MonCotiz>{datos_cbte_xml.get('mon_cotiz', '1.000')}</ar:MonCotiz>"""
     
-    # Agregar IVA solo si es necesario
+    # Agregar sección de IVA si es necesario
     if incluir_iva and datos_cbte_xml.get('alicuotas'):
         xml_base += f"""
                   <ar:Iva>
@@ -62,7 +72,7 @@ def construir_soap(token, sign, cuit, datos_cbte_xml):
                     ])}
                   </ar:Iva>"""
     
-    # Agregar Tributos solo si es necesario
+    # Agregar sección de Tributos si es necesario
     if incluir_tributos and datos_cbte_xml.get('tributos'):
         xml_base += f"""
                   <ar:Tributos>
@@ -90,19 +100,35 @@ def construir_soap(token, sign, cuit, datos_cbte_xml):
     return xml_base
 
 def enviar_comprobante(token, sign, cuit, datos_cbte_dict):
+    """
+    Envía el comprobante a AFIP y procesa la respuesta
+    Args:
+        token: Token de autenticación
+        sign: Firma digital
+        cuit: CUIT del emisor
+        datos_cbte_dict: Diccionario con los datos del comprobante
+    Returns:
+        str: Respuesta XML de AFIP
+    Raises:
+        Exception: Si hay errores en la comunicación o en la respuesta de AFIP
+    """
+    # Construir el XML SOAP
     body = construir_soap(token, sign, cuit, datos_cbte_dict)
+    
+    # Configurar headers para la petición SOAP
     headers = {
         'SOAPAction': 'http://ar.gov.afip.dif.FEV1/FECAESolicitar',
         'Content-Type': 'text/xml; charset=utf-8',
     }
     
-    # Configuración de timeout
+    # Configuración de timeout (conexión y lectura)
     timeout = (30, 30)  # (connect timeout, read timeout)
     
     try:
         print("Enviando request a AFIP...")
         print("Body:", body)  # Log del XML enviado
         
+        # Realizar la petición POST a AFIP
         r = requests.post(
             "https://wswhomo.afip.gov.ar/wsfev1/service.asmx",
             headers=headers,
@@ -120,10 +146,10 @@ def enviar_comprobante(token, sign, cuit, datos_cbte_dict):
         
         print("Response body:", r.text)  # Log del cuerpo de la respuesta
             
-        # Verificar si hay errores en el cuerpo de la respuesta
+        # Procesar la respuesta XML
         xml_resp = etree.fromstring(r.text.encode())
         
-        # Definir el namespace
+        # Definir el namespace para búsqueda en XML
         ns = {'ns': 'http://ar.gov.afip.dif.FEV1/'}
         
         # Verificar si hay errores en la respuesta
@@ -132,27 +158,29 @@ def enviar_comprobante(token, sign, cuit, datos_cbte_dict):
             mensajes_error = [f"{err.findtext('ns:Code', namespaces=ns)}: {err.findtext('ns:Msg', namespaces=ns)}" for err in errores]
             raise Exception("Error de AFIP: " + " | ".join(mensajes_error))
         
-        # Verificar el resultado usando la ruta correcta con namespace
+        # Verificar el resultado de la operación
         resultado = xml_resp.findtext(".//ns:FeCabResp/ns:Resultado", namespaces=ns)
         print(f"Resultado encontrado: {resultado}")  # Debug log
         
-        if resultado == "A":  # A = Aprobado
-            # Extraer la información exitosa usando las rutas correctas con namespace
+        if resultado == "A":  # Aprobado
+            # Extraer datos del comprobante aprobado
             cae = xml_resp.findtext(".//ns:FECAEDetResponse/ns:CAE", namespaces=ns)
             cae_fch_vto = xml_resp.findtext(".//ns:FECAEDetResponse/ns:CAEFchVto", namespaces=ns)
             
+            # Validar datos requeridos
             if not all([cae, cae_fch_vto]):
                 raise Exception("Error de AFIP: La respuesta no contiene CAE o fecha de vencimiento")
             
-            # Verificar si hay observaciones (advertencias)
+            # Procesar observaciones si existen
             observaciones = xml_resp.findall(".//ns:FECAEDetResponse/ns:Observaciones/ns:Obs", namespaces=ns)
             if observaciones:
                 mensajes_obs = [f"{obs.findtext('ns:Code', namespaces=ns)}: {obs.findtext('ns:Msg', namespaces=ns)}" for obs in observaciones]
                 print("Observaciones de AFIP:", mensajes_obs)  # Log de observaciones
             
             return r.text
-        elif resultado == "R":  # R = Rechazado
-            # Buscar observaciones de AFIP
+            
+        elif resultado == "R":  # Rechazado
+            # Procesar mensajes de error
             observaciones = xml_resp.findall(".//ns:FECAEDetResponse/ns:Observaciones/ns:Obs", namespaces=ns)
             if observaciones:
                 mensajes_error = [f"{obs.findtext('ns:Code', namespaces=ns)}: {obs.findtext('ns:Msg', namespaces=ns)}" for obs in observaciones]
@@ -160,10 +188,13 @@ def enviar_comprobante(token, sign, cuit, datos_cbte_dict):
             else:
                 raise Exception("Error de AFIP: El comprobante fue rechazado sin mensaje de error específico")
         else:
+            # Resultado inesperado
             print(f"XML completo recibido: {r.text}")  # Debug log
             raise Exception(f"Error de AFIP: Resultado inesperado '{resultado}'")
         
     except requests.exceptions.RequestException as e:
+        # Errores de conexión
         raise Exception(f"Error al conectar con AFIP: {str(e)}")
     except Exception as e:
+        # Otros errores
         raise e
