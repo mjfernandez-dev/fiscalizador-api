@@ -26,8 +26,11 @@ import socket          # Para configuración de timeout
 import sys            # Para argumentos de línea de comandos
 import os             # Para manejo de rutas y directorios
 import logging        # Para logging a archivo
+import threading      # Para ejecutar Flask en un hilo separado
+import time          # Para el bucle principal
 from logging.handlers import RotatingFileHandler  # Para rotación de logs
 from app import app   # Importamos nuestra aplicación Flask
+from waitress import serve  # Servidor de producción para Windows
 
 class FiscalizadorService(win32serviceutil.ServiceFramework):
     """
@@ -48,8 +51,12 @@ class FiscalizadorService(win32serviceutil.ServiceFramework):
         win32serviceutil.ServiceFramework.__init__(self, args)
         # Evento que se usará para señalar la detención del servicio
         self.stop_event = win32event.CreateEvent(None, 0, 0, None)
+        # Flag para controlar el bucle principal
+        self.running = True
         # Timeout para operaciones de socket
         socket.setdefaulttimeout(60)
+        # Thread para el servidor Flask
+        self.server_thread = None
         
         # Configuración del sistema de logging
         self._setup_logging()
@@ -102,6 +109,17 @@ class FiscalizadorService(win32serviceutil.ServiceFramework):
         
         self.logger.addHandler(WindowsEventHandler())
 
+    def _run_server(self):
+        """
+        Ejecuta el servidor Flask en un hilo separado.
+        """
+        try:
+            self.logger.info('Iniciando servidor Flask en http://localhost:8080')
+            serve(app, host='0.0.0.0', port=8080, threads=4)
+        except Exception as e:
+            self.logger.error(f'Error en el servidor Flask: {str(e)}')
+            self.running = False
+
     def SvcStop(self):
         """
         Se llama cuando el servicio recibe la señal de detención.
@@ -110,6 +128,8 @@ class FiscalizadorService(win32serviceutil.ServiceFramework):
         self.logger.info('Deteniendo servicio Fiscalizador AFIP...')
         # Notificar a Windows que el servicio está en proceso de detención
         self.ReportServiceStatus(win32service.SERVICE_STOP_PENDING)
+        # Detener el bucle principal
+        self.running = False
         # Señalar el evento de detención
         win32event.SetEvent(self.stop_event)
         self.logger.info('Servicio Fiscalizador AFIP detenido')
@@ -117,7 +137,7 @@ class FiscalizadorService(win32serviceutil.ServiceFramework):
     def SvcDoRun(self):
         """
         Método principal que se ejecuta cuando el servicio inicia.
-        Configura y ejecuta la aplicación Flask.
+        Mantiene un bucle principal mientras el servicio está activo.
         """
         try:
             self.logger.info('Iniciando servicio Fiscalizador AFIP...')
@@ -130,16 +150,28 @@ class FiscalizadorService(win32serviceutil.ServiceFramework):
             
             # Configurar la aplicación Flask
             app.logger = self.logger  # Usar el mismo logger
-            app.config['SERVER_NAME'] = 'localhost:8080'  # Configurar el nombre del servidor
             
-            # Iniciar la aplicación Flask
-            self.logger.info('Servicio Fiscalizador AFIP iniciado en http://localhost:8080')
-            app.run(host='0.0.0.0', port=8080)  # Escuchar en todas las interfaces
+            # Iniciar el servidor Flask en un hilo separado
+            self.server_thread = threading.Thread(target=self._run_server)
+            self.server_thread.daemon = True  # El hilo se detendrá cuando el programa principal termine
+            self.server_thread.start()
             
+            # Bucle principal del servicio
+            while self.running:
+                # Verificar el estado del servidor
+                if not self.server_thread.is_alive():
+                    self.logger.error('El servidor Flask se detuvo inesperadamente')
+                    self.running = False
+                    break
+                
+                # Esperar un poco antes de la siguiente verificación
+                time.sleep(5)
+                
         except Exception as e:
             # Loggear cualquier error que ocurra durante la ejecución
             self.logger.error(f'Error en el servicio: {str(e)}')
             servicemanager.LogErrorMsg(f'Error en el servicio: {str(e)}')
+            self.running = False
 
 def main():
     """
