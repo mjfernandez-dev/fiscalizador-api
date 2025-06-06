@@ -91,6 +91,7 @@ def fiscalizar():
     try:
         # Obtener y validar datos de la solicitud
         datos = request.json
+        print(datos)
         if not datos:
             app.logger.error("No se recibieron datos en la solicitud")
             return jsonify({"error": "No se recibieron datos"}), 400
@@ -98,16 +99,26 @@ def fiscalizar():
         # Verificar estado del TA
         ta_valido, mensaje_error = verificar_ta()
         if not ta_valido:
-            app.logger.error(f"TA inválido: {mensaje_error}")
-            return jsonify({"error": mensaje_error}), 400
-
-        # Obtener nuevo TA si es necesario
-        try:
-            ta_xml = obtener_ta(CERT, KEY)
-            token, sign = extraer_token_sign(ta_xml)
-        except Exception as e:
-            app.logger.error(f"Error al obtener TA: {str(e)}")
-            return jsonify({"error": f"Error al obtener el Ticket de Acceso: {str(e)}"}), 500
+            app.logger.info(f"TA inválido, intentando regenerar: {mensaje_error}")
+            try:
+                # Eliminar TA existente si está expirado
+                if os.path.exists("ta.xml"):
+                    os.remove("ta.xml")
+                # Intentar obtener nuevo TA
+                ta_xml = obtener_ta(CERT, KEY)
+                token, sign = extraer_token_sign(ta_xml)
+                app.logger.info("TA regenerado exitosamente")
+            except Exception as e:
+                app.logger.error(f"Error al regenerar TA: {str(e)}")
+                return jsonify({"error": f"Error al regenerar el Ticket de Acceso: {str(e)}"}), 500
+        else:
+            # Obtener TA existente
+            try:
+                ta_xml = obtener_ta(CERT, KEY)
+                token, sign = extraer_token_sign(ta_xml)
+            except Exception as e:
+                app.logger.error(f"Error al obtener TA: {str(e)}")
+                return jsonify({"error": f"Error al obtener el Ticket de Acceso: {str(e)}"}), 500
 
         # Consultar último comprobante autorizado para obtener el siguiente número
         try:

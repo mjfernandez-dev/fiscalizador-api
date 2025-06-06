@@ -42,8 +42,8 @@ def construir_soap(token, sign, cuit, datos_cbte_xml):
             <ar:FeDetReq>
                <ar:FECAEDetRequest>
                   <ar:Concepto>{datos_cbte_xml['concepto']}</ar:Concepto>
-                  <ar:DocTipo>{datos_cbte_xml['doc_tipo']}</ar:DocTipo>
-                  <ar:DocNro>{datos_cbte_xml['doc_nro']}</ar:DocNro>
+                  <ar:DocTipo>{datos_cbte_xml['tipo_doc']}</ar:DocTipo>
+                  <ar:DocNro>{datos_cbte_xml['nro_doc']}</ar:DocNro>
                   <ar:CbteDesde>{datos_cbte_xml['cbte_desde']}</ar:CbteDesde>
                   <ar:CbteHasta>{datos_cbte_xml['cbte_hasta']}</ar:CbteHasta>
                   <ar:CbteFch>{datos_cbte_xml['cbte_fch']}</ar:CbteFch>
