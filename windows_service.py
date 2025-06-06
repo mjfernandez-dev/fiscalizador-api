@@ -140,6 +140,9 @@ class FiscalizadorService(win32serviceutil.ServiceFramework):
         Mantiene un bucle principal mientras el servicio está activo.
         """
         try:
+            # Notificar a Windows que el servicio está iniciando
+            self.ReportServiceStatus(win32service.SERVICE_START_PENDING)
+            
             self.logger.info('Iniciando servicio Fiscalizador AFIP...')
             # Registrar el inicio del servicio en el Visor de Eventos
             servicemanager.LogMsg(
@@ -156,6 +159,9 @@ class FiscalizadorService(win32serviceutil.ServiceFramework):
             self.server_thread.daemon = True  # El hilo se detendrá cuando el programa principal termine
             self.server_thread.start()
             
+            # Notificar a Windows que el servicio está en ejecución
+            self.ReportServiceStatus(win32service.SERVICE_RUNNING)
+            
             # Bucle principal del servicio
             while self.running:
                 # Verificar el estado del servidor
@@ -165,13 +171,22 @@ class FiscalizadorService(win32serviceutil.ServiceFramework):
                     break
                 
                 # Esperar un poco antes de la siguiente verificación
-                time.sleep(5)
+                # Usar WaitForSingleObject para responder a señales de Windows
+                rc = win32event.WaitForSingleObject(self.stop_event, 5000)  # 5 segundos
+                if rc == win32event.WAIT_OBJECT_0:
+                    # Se recibió señal de detención
+                    break
                 
         except Exception as e:
             # Loggear cualquier error que ocurra durante la ejecución
             self.logger.error(f'Error en el servicio: {str(e)}')
             servicemanager.LogErrorMsg(f'Error en el servicio: {str(e)}')
             self.running = False
+            # Notificar a Windows que el servicio se detuvo por error
+            self.ReportServiceStatus(win32service.SERVICE_STOPPED)
+        finally:
+            # Asegurarse de que el servicio se detenga limpiamente
+            self.ReportServiceStatus(win32service.SERVICE_STOPPED)
 
 def main():
     """
